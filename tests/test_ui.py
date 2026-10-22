@@ -127,6 +127,7 @@ def test_whole_flow_through_the_window(qapp, window, synthetic_video, tmp_path, 
     window.setup.set_video(str(synthetic_video))
     window.setup.steps[("a", "meta")].setValue(2)
     window.setup.steps[("a", "calcio")].setValue(1)
+    window.setup.report_text.setPlainText("Meta al 10° (7-0). Meta nella ripresa (7-7).")
     window.setup.btn_go.click()
     assert window.stack.currentIndex() == 1
     assert wait_for(qapp, lambda: window.stack.currentIndex() == 2), "analisi non terminata"
@@ -147,7 +148,7 @@ def test_whole_flow_through_the_window(qapp, window, synthetic_video, tmp_path, 
 
         def values(self):
             return {"out": str(out), "music": str(song), "music_volume": 0.4,
-                    "original_volume": 0.8}
+                    "original_volume": 0.8, "script": True}
 
     monkeypatch.setattr(A, "ExportDialog", FakeDialog)
     window.review.btn_export.click()
@@ -157,6 +158,9 @@ def test_whole_flow_through_the_window(qapp, window, synthetic_video, tmp_path, 
     expected = sum(c.duration for c in window.review.clips if c.enabled)
     assert abs(probe_duration(out) - expected) < 1.5
     assert window.export.done_box.isVisible()
+    script = tmp_path / "finale_copione.txt"
+    assert script.exists() and "COPIONE CLIP PER CLIP" in script.read_text(encoding="utf-8-sig")
+    assert window.export.script == str(script)
 
 
 def test_setup_multiple_files(window, split_videos):
@@ -172,3 +176,17 @@ def test_setup_multiple_files(window, split_videos):
     assert len(s.paths) == 2
     s.clear()
     assert not s.paths and not s.btn_go.isEnabled()
+
+
+def test_report_fills_scoreboard(window):
+    s = window.setup
+    s.report_text.setPlainText(open(__import__("os").path.join(
+        __import__("os").path.dirname(__file__), "comunicato.txt"), encoding="utf-8").read())
+    s.venue.setCurrentIndex(1)                   # gioco in trasferta: la mia squadra e' la seconda
+    s.read_report()
+    assert s.steps[("a", "meta")].value() == 4 and s.steps[("b", "meta")].value() == 5
+    assert s.report() is not None
+    s.name_mine.setText("Fiorini")
+    s.name_opp.setText("Capitolina")
+    n = s.names()
+    assert (n.home, n.away) == ("Capitolina", "Fiorini")

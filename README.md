@@ -64,3 +64,7 @@ ffmpeg incluso nell'installer è la build GPL di BtbN (https://github.com/BtbN/F
 
 - Puoi trascinare **più file** (es. spezzoni da 17 minuti): vengono messi in ordine di nome e trattati come un'unica partita. L'ordine si può cambiare con ↑ / ↓.
 - Il montaggio usa **solo tagli netti**: nessuna transizione, nessun effetto, nessuna grafica. Punteggi e titoli si aggiungono dopo (es. in Premiere).
+
+## Copione e riassunto dal comunicato
+
+Nella prima schermata puoi incollare il comunicato stampa. Il programma legge i punteggi progressivi (es. «12-0», «12-7»), capisce chi ha segnato e se è una meta o un calcio, compila il tabellino e, alla creazione del video, scrive anche un file `..._copione.txt` con riassunto, testo da leggere per ogni clip (con orari del video finale), frase del comunicato di contesto e cronologia dei punti. Non usa internet né intelligenza artificiale: se il comunicato non riporta i punteggi progressivi, il testo resta generico.

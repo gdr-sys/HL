@@ -7,15 +7,16 @@ import threading
 
 from PySide6.QtCore import QObject, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QFrame, QGridLayout,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMainWindow, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
+                               QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QSlider, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import __version__, theme
 from .ffmpeg_utils import export_montage, probe_duration
 from .media import Media, natural_key
 from .models import Cancelled, Clip, Expected, Settings
+from .narration import Names, ReportError, build_script, parse_report
 from .paths import find_binary, find_vosk_model
 from .pipeline import analyze
 from .planner import fit_to_target, relabel
@@ -176,6 +177,48 @@ class SetupPage(QWidget):
         bl.addWidget(explain)
         col.addWidget(box)
 
+        # comunicato (facoltativo)
+        cbox = card()
+        cl = QVBoxLayout(cbox)
+        cl.setContentsMargins(20, 16, 20, 18)
+        cl.setSpacing(8)
+        ch = QLabel("Comunicato stampa (facoltativo)")
+        ch.setObjectName("h2")
+        chint = QLabel("Incollalo qui: ne ricavo i punti per il tabellino e preparo il copione da "
+                       "leggere e il riassunto della partita.")
+        chint.setObjectName("muted")
+        chint.setWordWrap(True)
+        cl.addWidget(ch)
+        cl.addWidget(chint)
+        names = QGridLayout()
+        names.setHorizontalSpacing(12)
+        self.name_mine, self.name_opp = QLineEdit(), QLineEdit()
+        self.name_mine.setPlaceholderText("La mia squadra (es. Fiorini Pesaro)")
+        self.name_opp.setPlaceholderText("Avversari (es. Capitolina)")
+        self.venue = QComboBox()
+        self.venue.addItems(["Gioco in casa", "Gioco in trasferta"])
+        names.addWidget(self.name_mine, 0, 0)
+        names.addWidget(self.name_opp, 0, 1)
+        names.addWidget(self.venue, 0, 2)
+        names.setColumnStretch(0, 1)
+        names.setColumnStretch(1, 1)
+        cl.addLayout(names)
+        self.report_text = QPlainTextEdit()
+        self.report_text.setPlaceholderText("Incolla qui il comunicato…")
+        self.report_text.setMinimumHeight(110)
+        self.report_text.setMaximumHeight(200)
+        cl.addWidget(self.report_text)
+        rb = QHBoxLayout()
+        self.btn_report = QPushButton("Leggi i punti dal comunicato")
+        self.btn_report.clicked.connect(self.read_report)
+        self.report_info = QLabel("")
+        self.report_info.setObjectName("muted")
+        self.report_info.setWordWrap(True)
+        rb.addWidget(self.btn_report)
+        rb.addWidget(self.report_info, 1)
+        cl.addLayout(rb)
+        col.addWidget(cbox)
+
         # impostazioni avanzate
         self.btn_adv = QPushButton("Impostazioni avanzate  ▾")
         self.btn_adv.setObjectName("flat")
@@ -296,6 +339,43 @@ class SetupPage(QWidget):
         s.calcio_post = float(self.spins["calcio_post"].value())
         s.delay_correction = float(self.spins["delay"].value())
         return s
+
+    # ---- comunicato
+    def _mine_is_home(self):
+        return self.venue.currentIndex() == 0
+
+    def names(self):
+        mine, opp = self.name_mine.text(), self.name_opp.text()
+        return Names(mine, opp) if self._mine_is_home() else Names(opp, mine)
+
+    def report(self):
+        """Il comunicato letto, oppure None se non c'e' (o non si capisce)."""
+        text = self.report_text.toPlainText().strip()
+        if not text:
+            return None
+        try:
+            return parse_report(text)
+        except ReportError:
+            return None
+
+    def read_report(self):
+        text = self.report_text.toPlainText().strip()
+        if not text:
+            self.report_info.setText("Incolla prima il comunicato.")
+            return None
+        try:
+            rep = parse_report(text)
+        except ReportError as e:
+            self.report_info.setText(str(e))
+            return None
+        mine = "home" if self._mine_is_home() else "away"
+        for key, side in (("a", mine), ("b", "away" if mine == "home" else "home")):
+            for kind in ("meta", "calcio"):
+                self.steps[(key, kind)].setValue(rep.count(kind, side))
+        self.report_info.setText(
+            f"Trovati {len(rep.events)} punteggi: {rep.count('meta')} mete e "
+            f"{rep.count('calcio')} calci a punti. Ho compilato il tabellino: controllalo.")
+        return rep
 
     def expected(self):
         return Expected(
@@ -740,7 +820,7 @@ class ReviewPage(QWidget):
 
 # ------------------------------------------------------------------ finestra di esportazione
 class ExportDialog(QDialog):
-    def __init__(self, parent, default_out):
+    def __init__(self, parent, default_out, has_report=False):
         super().__init__(parent)
         self.setWindowTitle("Crea highlights")
         self.setMinimumWidth(600)
@@ -796,6 +876,10 @@ class ExportDialog(QDialog):
         note.setWordWrap(True)
         ml.addWidget(note, 3, 0, 1, 3)
         v.addWidget(self.mbox)
+        self.chk_script = QCheckBox("Crea anche il copione e il riassunto (file di testo)")
+        self.chk_script.setChecked(True)
+        self.chk_script.setVisible(has_report)
+        v.addWidget(self.chk_script)
         v.addSpacing(8)
         foot = QHBoxLayout()
         foot.addStretch(1)
@@ -841,7 +925,8 @@ class ExportDialog(QDialog):
         return {"out": self.out.text().strip(),
                 "music": self.music if on else None,
                 "music_volume": self.v_music.value() / 100.0,
-                "original_volume": self.v_orig.value() / 100.0}
+                "original_volume": self.v_orig.value() / 100.0,
+                "script": self.chk_script.isVisibleTo(self) and self.chk_script.isChecked()}
 
 
 # ------------------------------------------------------------------------ pagina 4
@@ -889,12 +974,16 @@ class ExportPage(QWidget):
         self.btn_watch.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.out)))
         self.btn_folder = QPushButton("Mostra nella cartella")
         self.btn_folder.clicked.connect(lambda: open_folder_of(self.out))
+        self.script = None
+        self.btn_script = QPushButton("Apri il copione")
+        self.btn_script.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.script)))
         back = QPushButton("Torna alle clip")
         back.clicked.connect(self.backRequested)
         new = QPushButton("Nuova partita")
         new.setObjectName("flat")
         new.clicked.connect(self.newRequested)
-        for b in (self.btn_watch, self.btn_folder, back, new):
+        for b in (self.btn_watch, self.btn_folder, self.btn_script, back, new):
             dl.addWidget(b)
         col.addWidget(self.done_box)
         col.addStretch(3)
@@ -902,6 +991,7 @@ class ExportPage(QWidget):
 
     def start(self, info=""):
         self.out = None
+        self.script = None
         self.title.setText("Sto creando il video")
         self.sub.setText(info)
         self.bar.setValue(0)
@@ -922,6 +1012,7 @@ class ExportPage(QWidget):
         self.bar.hide()
         self.pct.hide()
         self.cancel.hide()
+        self.btn_script.setVisible(bool(self.script))
         self.done_box.show()
 
 
@@ -1033,10 +1124,14 @@ class MainWindow(QMainWindow):
     # ---- esportazione
     def _start_export(self, ranges):
         base = os.path.splitext(self._media.paths[0])[0] + "_highlights.mp4"
-        dlg = ExportDialog(self, base)
+        report = self.setup.report()
+        dlg = ExportDialog(self, base, has_report=report is not None)
         if dlg.exec() != QDialog.Accepted:
             return
         opts = dlg.values()
+        script_clips = [c for c in self.review.clips if c.enabled]
+        names = self.setup.names()
+        script_path = (os.path.splitext(opts["out"])[0] + "_copione.txt") if opts["script"] else None
         out, s, media = opts["out"], self._settings, self._media
         self._out = out
         total = sum(e - s_ for s_, e in ranges)
@@ -1049,6 +1144,12 @@ class MainWindow(QMainWindow):
                            progress=lambda f: cb(f, ""), music=opts["music"],
                            music_volume=opts["music_volume"],
                            original_volume=opts["original_volume"])
+            if script_path:
+                text = build_script(report, script_clips, names,
+                                    title=os.path.splitext(os.path.basename(out))[0].replace("_", " "))
+                with open(script_path, "w", encoding="utf-8-sig") as f:
+                    f.write(text)
+                self.export.script = script_path
             return out
 
         self._run(job, "export", self.export.finished)
