@@ -8,6 +8,7 @@ from collections import deque
 from .paths import find_binary
 
 _NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+AUDIO_SR = 16000
 
 
 def _run(cmd):
@@ -74,8 +75,44 @@ def run_with_progress(cmd, total_seconds, callback=None):
 def extract_audio_raw(video, out_raw, total_seconds, callback=None):
     """Audio mono 16 kHz, 16 bit, senza intestazione."""
     cmd = [find_binary("ffmpeg"), "-y", "-hide_banner", "-i", str(video),
-           "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", str(out_raw)]
+           "-vn", "-ac", "1", "-ar", str(AUDIO_SR), "-f", "s16le", str(out_raw)]
     run_with_progress(cmd, total_seconds, callback)
+
+
+def extract_audio_media(media, out_raw, callback=None):
+    """Audio di tutti i file della partita, uno dopo l'altro, in un unico file continuo.
+
+    Ogni file occupa esattamente la sua durata (se manca l'audio c'e' silenzio),
+    cosi' i tempi restano allineati alla linea del tempo della partita.
+    """
+    total = media.total or 1.0
+    done = 0.0
+    with open(out_raw, "wb") as out:
+        for i, src in enumerate(media.sources):
+            want = int(round(src.duration * AUDIO_SR)) * 2
+            part = f"{out_raw}.{i}.part"
+            written = 0
+            if has_audio(src.path):
+                base = done
+                extract_audio_raw(
+                    src.path, part, src.duration,
+                    (lambda f, b=base, d=src.duration: callback((b + f * d) / total))
+                    if callback else None)
+                with open(part, "rb") as f:
+                    while written < want:
+                        chunk = f.read(min(1 << 20, want - written))
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        written += len(chunk)
+                os.remove(part)
+            while written < want:          # silenzio dove manca l'audio
+                n = min(1 << 20, want - written)
+                out.write(b"\x00" * n)
+                written += n
+            done += src.duration
+            if callback:
+                callback(done / total)
 
 
 def extract_frame(video, t, out_png, width=480) -> bool:
@@ -86,51 +123,75 @@ def extract_frame(video, t, out_png, width=480) -> bool:
     return r.returncode == 0 and os.path.exists(out_png)
 
 
-def export_montage(video, ranges, out, *, fade=0.25, crf=18, preview=False,
+def export_montage(video, ranges, out, *, fade=0.0, crf=18, preview=False,
                    progress=None, music=None, music_volume=0.35, original_volume=1.0):
-    """Taglia gli intervalli (start, end) e li unisce in un unico video.
+    """Taglia gli intervalli e li unisce in un unico video, con tagli netti.
 
-    Un solo passaggio di ffmpeg: ogni clip ha una breve dissolvenza da/verso nero.
-    In modalita' anteprima la qualita' e' bassa e il file e' molto piu' veloce da creare.
+    video: percorso di un file oppure una Media (partita fatta di piu' file).
+    ranges: elenco di (inizio, fine) in secondi della partita. Un intervallo a cavallo
+    di due file prende entrambe le parti.
+
+    fade: dissolvenza da/verso nero in secondi tra una clip e l'altra; 0 (predefinito)
+    significa nessun effetto, solo tagli. In anteprima la qualita' e' bassa e il file
+    si crea molto piu' in fretta.
 
     music: file audio facoltativo, ripetuto se piu' corto del video e con dissolvenza
     finale. music_volume e original_volume (0..1) regolano il mix con l'audio del campo.
     """
-    ranges = [(float(s), float(e)) for s, e in ranges if e - s > 0.5]
-    if not ranges:
+    clips = []
+    for r in ranges:
+        s, e = float(r[0]), float(r[1])
+        if e - s <= 0.5:
+            continue
+        pieces = video.split_range(s, e) if hasattr(video, "split_range") else [(str(video), s, e)]
+        if pieces:
+            clips.append(pieces)
+    if not clips:
         raise ValueError("Nessuna clip da esportare.")
-    audio = has_audio(video)
-    inputs, parts, labels = [], [], []
-    for i, (s, e) in enumerate(ranges):
-        d = e - s
-        f = min(fade, d / 4)
-        inputs += ["-ss", f"{s:.3f}", "-t", f"{d:.3f}", "-i", str(video)]
-        v = (f"[{i}:v:0]setpts=PTS-STARTPTS,"
-             f"fade=t=in:st=0:d={f:.3f},fade=t=out:st={d - f:.3f}:d={f:.3f}")
-        if preview:
-            v += ",scale=-2:480"
-        v += f",format=yuv420p[v{i}]"
-        parts.append(v)
-        label = f"[v{i}]"
-        if audio:
-            parts.append(
-                f"[{i}:a:0]asetpts=PTS-STARTPTS,"
-                f"afade=t=in:st=0:d={f:.3f},afade=t=out:st={d - f:.3f}:d={f:.3f}[a{i}]")
-            label += f"[a{i}]"
-        labels.append(label)
-    n = len(ranges)
-    total = sum(e - s for s, e in ranges)
+    audio = has_audio(clips[0][0][0])
+
+    inputs, graph, labels = [], [], []
+    idx, total = 0, 0.0
+    for pieces in clips:
+        for k, (path, s, e) in enumerate(pieces):
+            d = e - s
+            f = min(fade, d / 4) if fade > 0 else 0.0
+            first, last = k == 0, k == len(pieces) - 1
+            i = idx
+            idx += 1
+            inputs += ["-ss", f"{s:.3f}", "-t", f"{d:.3f}", "-i", path]
+            v = f"[{i}:v:0]setpts=PTS-STARTPTS"
+            if f and first:
+                v += f",fade=t=in:st=0:d={f:.3f}"
+            if f and last:
+                v += f",fade=t=out:st={d - f:.3f}:d={f:.3f}"
+            if preview:
+                v += ",scale=-2:480"
+            graph.append(f"{v},format=yuv420p[v{i}]")
+            label = f"[v{i}]"
+            if audio:
+                a = f"[{i}:a:0]asetpts=PTS-STARTPTS"
+                if f and first:
+                    a += f",afade=t=in:st=0:d={f:.3f}"
+                if f and last:
+                    a += f",afade=t=out:st={d - f:.3f}:d={f:.3f}"
+                graph.append(f"{a}[a{i}]")
+                label += f"[a{i}]"
+            labels.append(label)
+            total += d
+    n = len(labels)
     concat = "".join(labels) + f"concat=n={n}:v=1:a={1 if audio else 0}[outv]"
     if audio:
         concat += "[outa]"
-    graph = parts + [concat]
+    graph.append(concat)
     out_audio = "[outa]" if audio else None
     if music:
-        # il brano e' l'ingresso numero n, ripetuto all'infinito e poi tagliato alla durata
+        # il brano e' l'ultimo ingresso, ripetuto all'infinito e poi tagliato alla durata
+        m = idx
         inputs += ["-stream_loop", "-1", "-i", str(music)]
         f_out = min(2.0, total / 2)
         graph.append(
-            f"[{n}:a:0]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,"
+            f"[{m}:a:0]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,"
             f"afade=t=in:st=0:d=1,afade=t=out:st={total - f_out:.3f}:d={f_out:.3f},"
             f"volume={max(0.0, music_volume):.3f}[mus]")
         if audio:

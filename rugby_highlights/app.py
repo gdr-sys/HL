@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QF
 
 from . import __version__, theme
 from .ffmpeg_utils import export_montage, probe_duration
+from .media import Media, natural_key
 from .models import Cancelled, Clip, Expected, Settings
 from .paths import find_binary, find_vosk_model
 from .pipeline import analyze
@@ -80,7 +81,7 @@ class SetupPage(QWidget):
 
     def __init__(self):
         super().__init__()
-        self._path = None
+        self.paths, self.durations, self._manual = [], {}, False
         inner = QWidget()
         scroll = QScrollArea()
         scroll.setWidget(inner)
@@ -110,8 +111,38 @@ class SetupPage(QWidget):
         col.addSpacing(6)
 
         self.drop = DropArea()
-        self.drop.fileChosen.connect(self.set_video)
+        self.drop.filesChosen.connect(self.add_files)
         col.addWidget(self.drop)
+
+        # elenco dei file della partita (ordinabile)
+        self.files_card = card()
+        fl = QVBoxLayout(self.files_card)
+        fl.setContentsMargins(16, 12, 16, 12)
+        fl.setSpacing(8)
+        top = QHBoxLayout()
+        fh = QLabel("File della partita")
+        fh.setObjectName("h2")
+        self.files_info = QLabel("")
+        self.files_info.setObjectName("muted")
+        top.addWidget(fh)
+        top.addStretch(1)
+        top.addWidget(self.files_info)
+        fl.addLayout(top)
+        self.flist = QListWidget()
+        self.flist.setMinimumHeight(64)
+        self.flist.setMaximumHeight(150)
+        fl.addWidget(self.flist)
+        fb = QHBoxLayout()
+        for text, fn in (("↑ Su", lambda: self._move(-1)), ("↓ Giù", lambda: self._move(1)),
+                         ("Rimuovi", self._remove), ("Svuota", self.clear)):
+            b = QPushButton(text)
+            b.setObjectName("small")
+            b.clicked.connect(fn)
+            fb.addWidget(b)
+        fb.addStretch(1)
+        fl.addLayout(fb)
+        self.files_card.hide()
+        col.addWidget(self.files_card)
 
         # tabellino
         box = card()
@@ -178,7 +209,7 @@ class SetupPage(QWidget):
         self.btn_go.setEnabled(False)
         self.btn_go.clicked.connect(self.analyzeRequested)
         foot = QHBoxLayout()
-        self.note = QLabel("Scegli prima il video della partita.")
+        self.note = QLabel("Scegli prima il video (o i video) della partita.")
         self.note.setObjectName("muted")
         foot.addWidget(self.note, 1)
         foot.addWidget(self.btn_go)
@@ -190,22 +221,72 @@ class SetupPage(QWidget):
         self.adv.setVisible(show)
         self.btn_adv.setText("Impostazioni avanzate  " + ("▴" if show else "▾"))
 
-    def set_video(self, path):
-        if not os.path.isfile(path):
-            return
+    # ---- file della partita
+    def add_files(self, paths):
+        bad = []
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            dur = probe_duration(path)
-        except Exception as e:  # noqa: BLE001
-            QMessageBox.warning(self, "Video", f"Non riesco a leggere questo file.\n\n{e}")
-            return
-        self._path = path
-        self.drop.show_file(os.path.basename(path),
-                            f"{fmt_time(dur)}  ·  {human_size(os.path.getsize(path))}")
-        self.btn_go.setEnabled(True)
-        self.note.setText("Per una partita intera l'analisi richiede qualche minuto.")
+            for p in paths:
+                if p in self.paths or not os.path.isfile(p):
+                    continue
+                try:
+                    self.durations[p] = probe_duration(p)
+                except Exception:  # noqa: BLE001
+                    bad.append(os.path.basename(p))
+                    continue
+                self.paths.append(p)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not self._manual:
+            self.paths.sort(key=natural_key)
+        if bad:
+            QMessageBox.warning(self, "Video", "Non riesco a leggere questi file:\n" + "\n".join(bad))
+        self._refresh_files()
 
-    def path(self):
-        return self._path
+    def set_video(self, path):
+        self.add_files([path])
+
+    def _refresh_files(self, select=None):
+        self.flist.clear()
+        for i, p in enumerate(self.paths, start=1):
+            self.flist.addItem(f"{i}.   {os.path.basename(p)}      {fmt_time(self.durations[p])}")
+        n = len(self.paths)
+        self.files_card.setVisible(n > 0)
+        self.btn_go.setEnabled(n > 0)
+        if n == 0:
+            self.drop.reset()
+            self.note.setText("Scegli prima il video (o i video) della partita.")
+            return
+        total = sum(self.durations[p] for p in self.paths)
+        size = sum(os.path.getsize(p) for p in self.paths if os.path.exists(p))
+        self.drop.show_files(os.path.basename(self.paths[0]) if n == 1 else f"{n} file",
+                             f"{fmt_time(total)}  ·  {human_size(size)}")
+        self.files_info.setText("in ordine di nome: puoi cambiarlo" if n > 1 else "")
+        self.note.setText("Per una partita intera l'analisi richiede qualche minuto.")
+        if select is not None:
+            self.flist.setCurrentRow(select)
+
+    def _move(self, delta):
+        i = self.flist.currentRow()
+        j = i + delta
+        if i < 0 or not (0 <= j < len(self.paths)):
+            return
+        self.paths[i], self.paths[j] = self.paths[j], self.paths[i]
+        self._manual = True
+        self._refresh_files(select=j)
+
+    def _remove(self):
+        i = self.flist.currentRow()
+        if i >= 0:
+            del self.paths[i]
+            self._refresh_files(select=min(i, len(self.paths) - 1))
+
+    def clear(self):
+        self.paths, self.durations, self._manual = [], {}, False
+        self._refresh_files()
+
+    def media(self):
+        return Media.from_paths(self.paths, self.durations)
 
     def settings(self):
         s = Settings()
@@ -306,7 +387,7 @@ class ReviewPage(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.video = None
+        self.media = None
         self.duration = 0.0
         self.clips = []
         self.sel = -1
@@ -463,15 +544,15 @@ class ReviewPage(QWidget):
         self._enable_edit(False)
 
     # ---- caricamento
-    def load(self, result, video, settings):
-        self.video, self.duration, self.settings = video, result.duration, settings
+    def load(self, result, media, settings):
+        self.media, self.duration, self.settings = media, result.duration, settings
         self.clips = result.clips
         self._cursor = 0.0
         self.timeline.set_data(result.duration, result.energy, result.whistles)
         msgs = [m for m in result.messages if m]
         self.banner.setVisible(bool(msgs))
         self.banner_lbl.setText("\n".join("• " + m for m in msgs))
-        self.player.load(video)
+        self.player.load(media)
         self._populate(0 if self.clips else -1)
 
     def stop(self):
@@ -503,7 +584,7 @@ class ReviewPage(QWidget):
     def _enable_edit(self, on):
         for w in (self.btn_play, self.btn_del, *self.ctrl):
             w.setEnabled(on)
-        self.btn_add.setEnabled(bool(self.video))
+        self.btn_add.setEnabled(bool(self.media))
         self.trim.setEnabled(on)
 
     def _select(self, row):
@@ -611,7 +692,7 @@ class ReviewPage(QWidget):
 
     # ---- azioni
     def _add(self):
-        if not self.video:
+        if not self.media:
             return
         t = self._cursor
         c = Clip(max(0.0, t - 20), min(self.duration, t + 10), "manuale",
@@ -932,26 +1013,31 @@ class MainWindow(QMainWindow):
 
     # ---- analisi
     def _start_analysis(self):
-        path, settings, expected = self.setup.path(), self.setup.settings(), self.setup.expected()
-        if not path:
+        if not self.setup.paths:
             return
-        self._settings, self._video = settings, path
+        settings, expected = self.setup.settings(), self.setup.expected()
+        try:
+            media = self.setup.media()
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, "Video", f"Non riesco a leggere i video.\n\n{e}")
+            return
+        self._settings, self._media = settings, media
         self.analysis.reset()
         self._go(1)
-        self._run(lambda cb: analyze(path, settings, expected, cb), "analysis", self._analysis_done)
+        self._run(lambda cb: analyze(media, settings, expected, cb), "analysis", self._analysis_done)
 
     def _analysis_done(self, result):
-        self.review.load(result, self._video, self._settings)
+        self.review.load(result, self._media, self._settings)
         self._go(2)
 
     # ---- esportazione
     def _start_export(self, ranges):
-        base = os.path.splitext(self._video)[0] + "_highlights.mp4"
+        base = os.path.splitext(self._media.paths[0])[0] + "_highlights.mp4"
         dlg = ExportDialog(self, base)
         if dlg.exec() != QDialog.Accepted:
             return
         opts = dlg.values()
-        out, s, video = opts["out"], self._settings, self._video
+        out, s, media = opts["out"], self._settings, self._media
         self._out = out
         total = sum(e - s_ for s_, e in ranges)
         self.export.start(f"{len(ranges)} clip · {fmt_time(total)}"
@@ -959,7 +1045,7 @@ class MainWindow(QMainWindow):
         self._go(3)
 
         def job(cb):
-            export_montage(video, ranges, out, fade=s.fade, crf=s.crf,
+            export_montage(media, ranges, out, fade=s.fade, crf=s.crf,
                            progress=lambda f: cb(f, ""), music=opts["music"],
                            music_volume=opts["music_volume"],
                            original_volume=opts["original_volume"])
@@ -969,6 +1055,7 @@ class MainWindow(QMainWindow):
 
     def _new_match(self):
         self.review.stop()
+        self.setup.clear()
         self._go(0)
 
     def closeEvent(self, e):

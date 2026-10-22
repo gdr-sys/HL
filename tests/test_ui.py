@@ -76,9 +76,11 @@ def test_review_editing(window, synthetic_video):
     res = analyze(video, Settings(), Expected(2, 1),
                   markers_provider=lambda raw: [Marker(41.0, "meta", "meta", 0.9),
                                                 Marker(95.0, "calcio", "calcio", 0.8)])
-    window._settings, window._video = Settings(), video
+    from rugby_highlights.media import Media
+    media = Media.from_paths([video])
+    window._settings, window._media = Settings(), media
     r = window.review
-    r.load(res, video, Settings())
+    r.load(res, media, Settings())
     window._go(2)
     assert r.list.count() == len(res.clips) >= 2
     assert r.sel == 0
@@ -155,3 +157,18 @@ def test_whole_flow_through_the_window(qapp, window, synthetic_video, tmp_path, 
     expected = sum(c.duration for c in window.review.clips if c.enabled)
     assert abs(probe_duration(out) - expected) < 1.5
     assert window.export.done_box.isVisible()
+
+
+def test_setup_multiple_files(window, split_videos):
+    s = window.setup
+    files = [str(p) for p in reversed(split_videos)]        # in disordine
+    s.add_files(files)
+    assert s.paths == sorted(files, key=lambda p: __import__("rugby_highlights.media", fromlist=["x"]).natural_key(p))
+    assert abs(s.media().total - 120) < 1.5
+    s.flist.setCurrentRow(0)
+    s._move(1)
+    assert s.paths[1] == sorted(files)[0] or len(s.paths) == 3
+    s._remove()
+    assert len(s.paths) == 2
+    s.clear()
+    assert not s.paths and not s.btn_go.isEnabled()

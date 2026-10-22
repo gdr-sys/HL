@@ -1,5 +1,7 @@
 """Componenti grafici riutilizzabili."""
 
+import os
+
 import numpy as np
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
@@ -7,6 +9,7 @@ from PySide6.QtWidgets import (QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLab
                                QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 from . import theme
+from .media import VIDEO_EXT, natural_key
 from .theme import kind_color
 
 
@@ -108,34 +111,51 @@ class NumberStepper(QWidget):
 
 # ----------------------------------------------------------------------------------
 class DropArea(QFrame):
-    """Zona dove trascinare il video, oppure cliccare per sceglierlo."""
-    fileChosen = Signal(str)
-    EXT = "Video (*.mp4 *.mov *.mkv *.avi *.mts *.m2ts *.mpg *.mpeg *.wmv *.m4v);;Tutti i file (*.*)"
+    """Zona dove trascinare uno o piu' video, oppure cliccare per sceglierli."""
+    filesChosen = Signal(list)
+    EXT = ("Video (*.mp4 *.mov *.mkv *.avi *.mts *.m2ts *.mpg *.mpeg *.wmv *.m4v);;"
+           "Tutti i file (*.*)")
 
     def __init__(self):
         super().__init__()
         self.setObjectName("drop")
         self.setAcceptDrops(True)
         self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(170)
+        self.setMinimumHeight(150)
         lay = QVBoxLayout(self)
         lay.setAlignment(Qt.AlignCenter)
         lay.setSpacing(6)
         self.icon = QLabel("+")
         self.icon.setObjectName("plus")
         self.icon.setAlignment(Qt.AlignCenter)
-        self.title = QLabel("Trascina qui il video della partita")
+        self.title = QLabel()
         self.title.setObjectName("h2")
-        self.sub = QLabel("oppure clicca per sceglierlo dal computer")
+        self.sub = QLabel()
         self.sub.setObjectName("muted")
         for w in (self.icon, self.title, self.sub):
             lay.addWidget(w, 0, Qt.AlignHCenter)
+        self.reset()
+
+    def reset(self):
+        self.icon.setText("+")
+        self.title.setText("Trascina qui i video della partita")
+        self.sub.setText("anche più file (es. file da 17 minuti), oppure clicca per sceglierli")
+        self.setProperty("loaded", False)
+        repolish(self)
+
+    def show_files(self, title, info):
+        self.icon.setText("✓")
+        self.title.setText(title)
+        self.sub.setText(info + "  ·  clicca per aggiungerne altri")
+        self.setProperty("loaded", True)
+        repolish(self)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
-            path, _ = QFileDialog.getOpenFileName(self, "Scegli il video della partita", "", self.EXT)
-            if path:
-                self.fileChosen.emit(path)
+            paths, _ = QFileDialog.getOpenFileNames(
+                self, "Scegli i video della partita", "", self.EXT)
+            if paths:
+                self.filesChosen.emit(list(paths))
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
@@ -150,16 +170,21 @@ class DropArea(QFrame):
     def dropEvent(self, e):
         self.setProperty("hover", False)
         repolish(self)
-        urls = e.mimeData().urls()
-        if urls:
-            self.fileChosen.emit(urls[0].toLocalFile())
+        paths = expand_paths([u.toLocalFile() for u in e.mimeData().urls()])
+        if paths:
+            self.filesChosen.emit(paths)
 
-    def show_file(self, name, info):
-        self.icon.setText("✓")
-        self.title.setText(name)
-        self.sub.setText(info + "  ·  clicca per cambiare video")
-        self.setProperty("loaded", True)
-        repolish(self)
+
+def expand_paths(paths):
+    """File cosi' come sono; per le cartelle, i video che contengono."""
+    out = []
+    for p in paths:
+        if os.path.isdir(p):
+            out += [os.path.join(p, f) for f in sorted(os.listdir(p), key=natural_key)
+                    if f.lower().endswith(VIDEO_EXT)]
+        elif os.path.isfile(p):
+            out.append(p)
+    return out
 
 
 # ----------------------------------------------------------------------------------

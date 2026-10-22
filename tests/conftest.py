@@ -50,3 +50,18 @@ def synthetic_video(tmp_path_factory):
          "-c:a", "aac", "-shortest", str(mp4)],
         check=True)
     return mp4
+
+
+@pytest.fixture(scope="session")
+def split_videos(synthetic_video, tmp_path_factory):
+    """La stessa partita spezzata in tre file (come una telecamera con file da 17 minuti)."""
+    d = tmp_path_factory.mktemp("split")
+    paths = []
+    for i, (a, b) in enumerate(((0, 40), (40, 85), (85, 120)), start=1):
+        out = d / f"GOPR{i:04d}.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(a), "-i", str(synthetic_video),
+             "-t", str(b - a), "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+             "-c:a", "aac", str(out)], check=True)
+        paths.append(str(out))
+    return paths

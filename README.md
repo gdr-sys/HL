@@ -59,3 +59,8 @@ calibrati su una registrazione vera, controllando in particolare:
 - se dici la parola **durante** l'azione o dopo (opzione «ritardo»).
 
 ffmpeg incluso nell'installer è la build GPL di BtbN (https://github.com/BtbN/FFmpeg-Builds).
+
+## Più file per partita, solo tagli
+
+- Puoi trascinare **più file** (es. spezzoni da 17 minuti): vengono messi in ordine di nome e trattati come un'unica partita. L'ordine si può cambiare con ↑ / ↓.
+- Il montaggio usa **solo tagli netti**: nessuna transizione, nessun effetto, nessuna grafica. Punteggi e titoli si aggiungono dopo (es. in Premiere).

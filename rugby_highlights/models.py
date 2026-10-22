@@ -33,7 +33,7 @@ class Settings:
     # Montaggio
     merge_gap: float = 2.0
     min_clip_seconds: float = 8.0
-    fade: float = 0.25
+    fade: float = 0.0        # 0 = solo tagli netti, nessun effetto
     crf: int = 18
     target_seconds: float = 180.0
 

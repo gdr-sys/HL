@@ -5,15 +5,27 @@ import shutil
 import tempfile
 
 from .audio_analysis import analyze_audio
-from .ffmpeg_utils import extract_audio_raw, has_audio, probe_duration
+from .ffmpeg_utils import extract_audio_media, has_audio
+from .media import Media
 from .models import AnalysisResult
 from .paths import find_vosk_model
 from .planner import plan_clips, compare_expected, relabel, suggest_from_audio
 
 
+def as_media(video) -> Media:
+    """Accetta un percorso, un elenco di percorsi (partita a piu' file) o una Media."""
+    if isinstance(video, Media):
+        return video
+    if isinstance(video, (str, os.PathLike)):
+        return Media.from_paths([video])
+    return Media.from_paths(list(video))
+
+
 def analyze(video, settings, expected, progress=None, markers_provider=None,
             model_dir=None) -> AnalysisResult:
-    """progress(frazione, testo). Puo' sollevare Cancelled per interrompere.
+    """video: un file, un elenco di file (in ordine) o una Media.
+
+    progress(frazione, testo). Puo' sollevare Cancelled per interrompere.
 
     markers_provider(raw_path) -> list[Marker] sostituisce il riconoscimento
     vocale (usato nei test).
@@ -25,15 +37,16 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
 
     if progress:
         progress(0.0, "Leggo il video…")
-    duration = probe_duration(video)
-    if not has_audio(video):
+    media = as_media(video)
+    duration = media.total
+    if not any(has_audio(p) for p in media.paths):
         raise RuntimeError("Il video non ha una traccia audio.")
 
     messages = []
     tmp = tempfile.mkdtemp(prefix="rugbyhl_")
     try:
         raw = os.path.join(tmp, "audio.raw")
-        extract_audio_raw(video, raw, duration, report(0.02, 0.20, "Estraggo l'audio…"))
+        extract_audio_media(media, raw, report(0.02, 0.20, "Estraggo l'audio…"))
         feats = analyze_audio(raw, report(0.20, 0.40, "Cerco fischi e rumore del pubblico…"))
 
         markers = []
