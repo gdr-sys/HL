@@ -320,14 +320,20 @@ class App(tk.Tk):
         if self._updating or self.sel is None:
             return
         c = self.clips[self.sel]
-        c.start = min(float(self.s_start.get()), c.end - 2)
+        v = float(self.s_start.get())
+        if abs(v - c.start) < 0.26:      # solo arrotondamento del cursore, non un movimento
+            return
+        c.start = min(v, c.end - 2)
         self._after_slider(c)
 
     def _on_end(self, _v):
         if self._updating or self.sel is None:
             return
         c = self.clips[self.sel]
-        c.end = max(float(self.s_end.get()), c.start + 2)
+        v = float(self.s_end.get())
+        if abs(v - c.end) < 0.26:
+            return
+        c.end = max(v, c.start + 2)
         self._after_slider(c)
 
     def _after_slider(self, c):

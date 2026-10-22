@@ -30,9 +30,14 @@ def test_gui_builds_and_edits_clips(synthetic_video, monkeypatch):
         app.update()
         assert app.sel == 0
 
+        # Con la finestra nascosta Tk non richiama da solo il comando del cursore:
+        # lo chiamo io, come farebbe il movimento col mouse.
         app.s_start.set(15.0)
-        app.update()
-        assert abs(app.clips[0].start - 15.0) < 0.6
+        app._on_start(None)
+        assert abs(app.clips[0].start - 15.0) < 0.01
+        app.s_end.set(35.0)
+        app._on_end(None)
+        assert abs(app.clips[0].end - 35.0) < 0.01
 
         app.clips[1].enabled = False
         app._update_total()
