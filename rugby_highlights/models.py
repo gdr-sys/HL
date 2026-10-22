@@ -88,3 +88,4 @@ class AnalysisResult:
     whistles: list = field(default_factory=list)
     peaks: list = field(default_factory=list)
     messages: list = field(default_factory=list)
+    energy: list = field(default_factory=list)   # livello del rumore, un valore al secondo

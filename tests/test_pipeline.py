@@ -79,6 +79,20 @@ def test_export_montage_and_frame(synthetic_video, tmp_path):
     assert r.stdout.strip() == "640,360"
 
 
+def test_export_with_music_shorter_than_video(synthetic_video, tmp_path):
+    song = tmp_path / "song.wav"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                    "sine=frequency=440:duration=5", str(song)], check=True)   # 5 s: va ripetuta
+    out = tmp_path / "hl_music.mp4"
+    export_montage(synthetic_video, [(16.5, 36.5), (81.0, 91.0)], out,
+                   music=song, music_volume=0.5, original_volume=0.3)
+    assert abs(_duration(out) - 30.0) < 1.0
+    # niente musica: nessun errore e stessa durata (audio originale solo)
+    out2 = tmp_path / "hl_nomusic.mp4"
+    export_montage(synthetic_video, [(16.5, 36.5), (81.0, 91.0)], out2)
+    assert abs(_duration(out2) - 30.0) < 1.0
+
+
 def test_fit_to_target():
     from rugby_highlights.models import Clip
     clips = [Clip(0, 60, "meta"), Clip(100, 160, "meta"), Clip(200, 260, "meta")]

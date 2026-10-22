@@ -69,6 +69,10 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
                 clips = relabel(clips + extra)
         if progress:
             progress(1.0, "Fatto")
-        return AnalysisResult(duration, clips, markers, feats.whistles, feats.peaks, messages)
+        per_sec = len(feats.rms_db) // 10
+        energy = (feats.rms_db[:per_sec * 10].reshape(per_sec, 10).max(axis=1).tolist()
+                  if per_sec else [])
+        return AnalysisResult(duration, clips, markers, feats.whistles, feats.peaks,
+                              messages, energy)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

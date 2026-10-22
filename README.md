@@ -11,7 +11,9 @@ Programma per Windows che crea il video degli highlights di una partita di rugby
    (massimo ~40 s) e in avanti con i **festeggiamenti** (12 s). Per i calci taglia rincorsa, calcio e reazione.
 4. Confronta quanto trovato con il **tabellino** che inserisci. Se manca qualcosa, aggiunge clip
    «da verificare» ai picchi di rumore del pubblico; se ne trova troppe, disattiva le meno sicure.
-5. Tu controlli le clip (inizio/fine regolabili, anteprima) e premi **Crea highlights**.
+5. Tu controlli le clip nel player integrato (inizio/fine regolabili trascinando le maniglie, con
+   la linea del tempo di tutta la partita) e premi **Crea highlights**. Facoltativa: musica di sottofondo
+   con volume regolabile.
 
 Il video esce alla **stessa risoluzione dell'originale** (ricodificato H.264 ad alta qualità, CRF 18),
 con una breve dissolvenza tra una clip e l'altra.
@@ -35,12 +37,16 @@ Per una release stabile: crea un tag, ad esempio `v0.1.0`; l'installer compare i
 pip install -r requirements.txt pytest
 python -m pytest            # richiede ffmpeg nel PATH
 python -m rugby_highlights video.mp4 --meta 3 --calci 4 --out highlights.mp4   # senza interfaccia
-python main.py              # interfaccia grafica
+python main.py              # interfaccia grafica (Qt / PySide6)
 ```
 
 Per il riconoscimento vocale da sorgente scarica il modello italiano
 [vosk-model-small-it-0.22](https://alphacephei.com/vosk/models) in `build_res/models/`
 (oppure imposta `RUGBY_VOSK_MODEL` con il percorso della cartella).
+
+Se il player video desse problemi su un PC, si spegne con la variabile d'ambiente
+`RUGBY_NO_VIDEO_PLAYER=1` (le clip e il montaggio funzionano lo stesso). Errori imprevisti vengono
+mostrati e salvati in `%TEMP%\\rugby_highlights_errore.txt`.
 
 ## Da tarare con partite reali
 

@@ -87,11 +87,14 @@ def extract_frame(video, t, out_png, width=480) -> bool:
 
 
 def export_montage(video, ranges, out, *, fade=0.25, crf=18, preview=False,
-                   progress=None):
+                   progress=None, music=None, music_volume=0.35, original_volume=1.0):
     """Taglia gli intervalli (start, end) e li unisce in un unico video.
 
     Un solo passaggio di ffmpeg: ogni clip ha una breve dissolvenza da/verso nero.
     In modalita' anteprima la qualita' e' bassa e il file e' molto piu' veloce da creare.
+
+    music: file audio facoltativo, ripetuto se piu' corto del video e con dissolvenza
+    finale. music_volume e original_volume (0..1) regolano il mix con l'audio del campo.
     """
     ranges = [(float(s), float(e)) for s, e in ranges if e - s > 0.5]
     if not ranges:
@@ -116,18 +119,34 @@ def export_montage(video, ranges, out, *, fade=0.25, crf=18, preview=False,
             label += f"[a{i}]"
         labels.append(label)
     n = len(ranges)
+    total = sum(e - s for s, e in ranges)
     concat = "".join(labels) + f"concat=n={n}:v=1:a={1 if audio else 0}[outv]"
     if audio:
         concat += "[outa]"
+    graph = parts + [concat]
+    out_audio = "[outa]" if audio else None
+    if music:
+        # il brano e' l'ingresso numero n, ripetuto all'infinito e poi tagliato alla durata
+        inputs += ["-stream_loop", "-1", "-i", str(music)]
+        f_out = min(2.0, total / 2)
+        graph.append(
+            f"[{n}:a:0]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,"
+            f"afade=t=in:st=0:d=1,afade=t=out:st={total - f_out:.3f}:d={f_out:.3f},"
+            f"volume={max(0.0, music_volume):.3f}[mus]")
+        if audio:
+            graph.append(f"[outa]volume={max(0.0, original_volume):.3f}[orig]")
+            graph.append("[orig][mus]amix=inputs=2:duration=first:normalize=0[aout]")
+            out_audio = "[aout]"
+        else:
+            out_audio = "[mus]"
     cmd = [find_binary("ffmpeg"), "-y", "-hide_banner", *inputs,
-           "-filter_complex", ";".join(parts + [concat]), "-map", "[outv]"]
-    if audio:
-        cmd += ["-map", "[outa]"]
+           "-filter_complex", ";".join(graph), "-map", "[outv]"]
+    if out_audio:
+        cmd += ["-map", out_audio]
     cmd += ["-c:v", "libx264",
             "-preset", "ultrafast" if preview else "medium",
             "-crf", "28" if preview else str(crf)]
-    if audio:
+    if out_audio:
         cmd += ["-c:a", "aac", "-b:a", "128k" if preview else "192k"]
     cmd += ["-movflags", "+faststart", str(out)]
-    total = sum(e - s for s, e in ranges)
     run_with_progress(cmd, total, progress)

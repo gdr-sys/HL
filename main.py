@@ -1,4 +1,4 @@
-from rugby_highlights.gui import main
+from rugby_highlights.app import main
 
 if __name__ == "__main__":
     main()

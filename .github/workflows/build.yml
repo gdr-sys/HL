@@ -42,7 +42,7 @@ jobs:
           Invoke-WebRequest -Uri "https://alphacephei.com/vosk/models/vosk-model-small-it-0.22.zip" -OutFile model.zip
           Expand-Archive model.zip -DestinationPath build_res/models
 
-      - name: Test (analisi, montaggio, interfaccia)
+      - name: Test (analisi, montaggio, finestra)
         shell: pwsh
         run: python -m pytest -q
 
@@ -51,9 +51,22 @@ jobs:
         run: |
           pyinstaller --noconfirm --windowed --name RugbyHighlights `
             --collect-all vosk `
+            --exclude-module tkinter `
+            --hidden-import PySide6.QtMultimedia `
+            --hidden-import PySide6.QtMultimediaWidgets `
             --add-data "build_res/ffmpeg;ffmpeg" `
             --add-data "build_res/models;models" `
             main.py
+
+      - name: Prova di avvio del programma creato
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $p = Start-Process -FilePath "dist/RugbyHighlights/RugbyHighlights.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { Write-Error "Il programma si e' chiuso all'avvio (codice $($p.ExitCode))"; exit 1 }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "Il programma si avvia correttamente."
 
       - name: Crea la versione portatile (zip)
         shell: pwsh
