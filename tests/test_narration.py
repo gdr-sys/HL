@@ -65,3 +65,16 @@ def test_timecodes_since_inizio_and_files():
     assert "[b.mp4 a 0:00:30.0]" in txt
     csv = timecodes.build_csv(res, media, Settings(), res.clips)
     assert csv.splitlines()[0].startswith("Tipo;") and "scartata" in csv
+
+
+def test_shorthand_scoreboard_log():
+    t = ("13’ cp tarv (0-3), 29’ cp Azzolini (3-3), 33’ cp Azzolini (6-3), 38’ m tatrv 6-8, "
+         "40’ cp Azzolini (9-8). S.t. 17’ cp Giabardo (9-11), 25’ m tarv tr (9-18), "
+         "30‘ m pesaro tr Azzolini (16-18),")
+    r = parse_report(t)
+    assert r.final == (16, 18) and r.count("meta") == 3 and r.count("calcio") == 5
+    assert r.events[1].scorer == "Azzolini" and r.events[1].detail == "punizione"
+    assert r.events[5].when == "Al 17° del secondo tempo" and r.events[7].when == "Al 30° del secondo tempo"
+    assert r.events[7].detail == "trasformata" and r.events[7].side == "home"
+    s = build_script(r, [Clip(0, 20, "calcio")], Names("Pesaro", "Tarvisio"))
+    assert "primo calcio di punizione per Tarvisio" in s

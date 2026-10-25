@@ -10,8 +10,12 @@ import re
 from dataclasses import dataclass, field
 
 SCORE_RE = re.compile(r"(?<!\d)(\d{1,3})\s*[-–—]\s*(\d{1,3})(?!\d)")
-MINUTE_RE = re.compile(r"(?<!\d)(\d{1,2})\s*(?:°|º|ª|’|'|′|esimo|\s*minuto)")
-SECOND_HALF_RE = re.compile(r"\b(ripresa|secondo tempo|seconda frazione|secondo tempo)\b", re.I)
+MINUTE_RE = re.compile(r"(?<!\d)(\d{1,2})\s*(?:°|º|ª|’|‘|'|′|`|esimo|\s*minuto)")
+SECOND_HALF_RE = re.compile(
+    r"\b(ripresa|secondo tempo|seconda frazione|II tempo|2\s?[°º]\s?tempo)\b|\bs\s?\.\s?t\b\.?", re.I)
+# sigle da tabellino: cp = calcio di punizione, dr = drop, m = meta, tr = trasformata
+SHORT_RE = re.compile(r"\b(cp|dr|tr|m)\b", re.I)
+SCORER_RE = re.compile(r"\b(?:cp|dr|tr|m)\b[^()\n,;]*?\b([A-ZÀ-Ý][a-zà-ÿ']{2,})")
 END_FIRST_RE = re.compile(r"scadere (?:della|del) (?:prima|primo) (?:frazione|tempo)", re.I)
 FINAL_RE = re.compile(r"fischio finale|ultimo assalto|filo di lana|ultimi minuti|ultima azione", re.I)
 LEAD_WORDS = re.compile(r"^(?:e|ed|ma|però|mentre|poi|quindi|ma poi)\s+", re.I)
@@ -36,6 +40,8 @@ class Event:
     fragment: str = ""         # la frase del comunicato che lo racconta
     when: str = ""             # "Al 27°", "Nella ripresa", ...
     minute: int = None
+    scorer: str = ""          # marcatore, se scritto nel tabellino (es. «cp Azzolini»)
+    detail: str = ""          # "punizione" | "drop" | "trasformata"
     exact: bool = True         # False se piu' punti stanno nello stesso salto (ordine incerto)
 
 
@@ -155,10 +161,10 @@ def parse_report(text) -> Report:
 
         before = text[:m.start()]
         second_half = bool(SECOND_HALF_RE.search(before)) or bool(SECOND_HALF_RE.search(fragment))
-        mm = MINUTE_RE.search(fragment) or MINUTE_RE.search(text[s_start:s_end])
+        mm = MINUTE_RE.search(fragment)
         minute = int(mm.group(1)) if mm else None
         if minute:
-            when = f"Al {minute}°"
+            when = f"Al {minute}°" + (" del secondo tempo" if second_half else "")
         elif END_FIRST_RE.search(fragment):
             when = "Allo scadere del primo tempo"
         elif FINAL_RE.search(fragment):
@@ -168,6 +174,12 @@ def parse_report(text) -> Report:
         else:
             when = ""
 
+        shorts = {s.lower() for s in SHORT_RE.findall(fragment)}
+        sm = SCORER_RE.search(fragment)
+        scorer = sm.group(1) if sm else ""
+        detail = "punizione" if "cp" in shorts else "drop" if "dr" in shorts else ""
+        if "tr" in shorts:
+            detail = "trasformata"
         dh, da = cur[0] - prev[0], cur[1] - prev[1]
         groups = [("home", p) for p in _split_points(dh)] + [("away", p) for p in _split_points(da)]
         if not groups:
@@ -179,6 +191,8 @@ def parse_report(text) -> Report:
             known = k == len(groups) - 1
             events.append(Event(side, "meta" if pts >= 5 else "calcio", pts,
                                 cur if known else None, fragment, when, minute,
+                                scorer=scorer if len(groups) == 1 else "",
+                                detail=detail if len(groups) == 1 else "",
                                 exact=len(groups) == 1))
         prev = cur
 
@@ -237,11 +251,13 @@ def event_line(ev, number, names):
     """La frase da leggere per un'azione, breve e sempre adatta alla durata della clip."""
     team = names.of(ev.side)
     if ev.kind == "meta":
-        what = f"{_ordinal(number, True)} meta" + (" trasformata" if ev.points == 7 and ev.exact else "")
+        trasf = ev.detail == "trasformata" or (ev.points == 7 and ev.exact)
+        what = f"{_ordinal(number, True)} meta" + (" trasformata" if trasf else "")
     else:
-        what = f"{_ordinal(number, False)} calcio a punti"
+        kind = {"punizione": "calcio di punizione", "drop": "drop"}.get(ev.detail, "calcio a punti")
+        what = f"{_ordinal(number, False)} {kind}"
     head = f"{ev.when}, " if ev.when else ""
-    line = f"{head}{what} per {team}."
+    line = f"{head}{what} per {team}" + (f", firmato {ev.scorer}." if ev.scorer else ".")
     line = line[0].upper() + line[1:]
     if ev.score:
         line += f" {_score_line(ev.score, names)}."
