@@ -173,7 +173,7 @@ class SetupPage(QWidget):
                 tl.addWidget(s)
             teams.addLayout(tl, 1)
         bl.addLayout(teams)
-        explain = QLabel("Calci a punti: trasformazioni, punizioni e drop.")
+        explain = QLabel("Calci a punti: solo punizioni e drop. La trasformazione fa parte della meta: non va contata né detta.")
         explain.setObjectName("muted")
         bl.addWidget(explain)
         col.addWidget(box)

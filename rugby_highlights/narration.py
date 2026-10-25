@@ -187,6 +187,19 @@ def parse_report(text) -> Report:
             continue
         # la meta (anche piu' di una) prima, poi i calci
         groups.sort(key=lambda g: (g[0] != "home", g[1] < 5, -g[1]))
+        # una trasformata (2 punti) fa parte della meta: non e' un'azione a parte
+        conv = [g for g in groups if g[1] == 2]
+        for side, _ in conv:
+            for e in reversed(events):
+                if e.side == side and e.kind == "meta":
+                    e.points, e.detail, e.exact = 7, "trasformata", True
+                    if len(conv) == len(groups):
+                        e.score = cur
+                    break
+        groups = [g for g in groups if g[1] != 2]
+        if not groups:
+            prev = cur
+            continue
         for k, (side, pts) in enumerate(groups):
             known = k == len(groups) - 1
             events.append(Event(side, "meta" if pts >= 5 else "calcio", pts,

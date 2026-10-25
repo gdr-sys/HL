@@ -78,3 +78,9 @@ def test_shorthand_scoreboard_log():
     assert r.events[7].detail == "trasformata" and r.events[7].side == "home"
     s = build_script(r, [Clip(0, 20, "calcio")], Names("Pesaro", "Tarvisio"))
     assert "primo calcio di punizione per Tarvisio" in s
+
+
+def test_separate_conversion_is_part_of_the_try():
+    r = parse_report("Meta al 10° (5-0), trasformazione (7-0). Poi un calcio di punizione (7-3).")
+    assert [(e.kind, e.points) for e in r.events] == [("meta", 7), ("calcio", 3)]
+    assert r.events[0].score == (7, 0) and r.count("calcio") == 1
