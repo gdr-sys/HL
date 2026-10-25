@@ -96,3 +96,26 @@ def test_inizio_snaps_to_whistle():
     assert rows[0]["t"] == 26.0 and rows[0]["snapped"]          # aggancia il fischio
     assert rows[1]["t"] == 100.0 and not rows[1]["snapped"]     # nessun fischio vicino
     assert abs(rows[2]["since"] - 10.0) < 1e-6
+
+
+def test_premiere_xml_and_csv(split_videos, tmp_path):
+    import xml.etree.ElementTree as ET
+    from rugby_highlights import premiere
+    from rugby_highlights.media import Media
+    from rugby_highlights.models import AnalysisResult, Marker, Settings
+    media = Media.from_paths([str(p) for p in split_videos])
+    res = AnalysisResult(media.total, clips=[Clip(40, 60, "meta")],
+                         markers=[Marker(20.0, "inizio"), Marker(58.0, "meta"), Marker(100.0, "calcio")])
+    xml, csv = premiere.save(str(tmp_path / "p"), res, media, Settings(), res.clips)
+    root = ET.parse(xml).getroot()
+    seq = root.find("sequence")
+    names = [m.findtext("name") for m in seq.findall("marker")]
+    assert names == ["Inizio 1° tempo", "Azione Meta 1", "Meta 1", "Calcio 1"]
+    fps = int(seq.find("rate/timebase").text)
+    assert fps == 25                                  # sequenza a 25 fps
+    ins = {m.findtext("name"): int(m.findtext("in")) for m in seq.findall("marker")}
+    assert ins["Meta 1"] == 58 * fps and len(seq.findall("media/video/track/clipitem")) == 3
+    lines = open(csv, encoding="utf-8-sig").read().splitlines()
+    assert lines[0].startswith("Marker Name\t") and lines[3].startswith("Meta 1\t")
+    assert premiere.pathurl("C:\\Partite\\a b.mp4") == "file://localhost/C%3a/Partite/a%20b.mp4"
+    assert premiere.timebase(29.97) == (30, True) and premiere.timebase(25.0) == (25, False)

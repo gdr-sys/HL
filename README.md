@@ -72,3 +72,7 @@ Nella prima schermata puoi incollare il comunicato stampa. Il programma legge i 
 ## Minutaggi per il montaggio completo
 
 Se dici «inizio» al calcio d'inizio (anche all'inizio del secondo tempo), il programma lo segna. Il pulsante **Minutaggi** nella revisione (e il file `..._minutaggi.txt/.csv` creato con il video) elenca ogni «meta», «calcio» e «inizio» con il tempo preciso sulla registrazione, il tempo dall'ultimo «inizio», l'azione che finisce negli highlights e, se i file sono più di uno, il file e il punto dentro al file.
+
+## Marcatori per Premiere
+
+Insieme ai minutaggi il programma crea `..._premiere.xml` (File > Importa in Premiere: una sequenza con i file della partita e i marcatori «Meta 1», «Calcio 2», «Inizio 2° tempo» e «Azione …») e `..._premiere_marcatori.csv` (elenco per il pannello Marcatori). La sequenza è a 25 fps: si può girare a 50p e montare a 25, i tempi in secondi restano uguali.

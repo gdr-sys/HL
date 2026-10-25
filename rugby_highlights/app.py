@@ -21,7 +21,7 @@ from .paths import find_binary, find_vosk_model
 from .pipeline import analyze
 from .planner import fit_to_target, relabel
 from .player import VideoPlayer
-from . import timecodes
+from . import premiere, timecodes
 from .widgets import (ClipRow, ClipTimeline, DropArea, NumberStepper, StepBar, Stepper,
                       TrimSlider, fmt_time, repolish)
 
@@ -1143,8 +1143,15 @@ class MainWindow(QMainWindow):
         except OSError as e:
             QMessageBox.warning(self, "Minutaggi", f"Non riesco a salvare il file.\n\n{e}")
             return
+        try:
+            xml, mcsv = premiere.save(os.path.splitext(path)[0] + "_premiere", self._result,
+                                      self._media, self._settings, self.review.clips)
+            extra = (f"\n\nPer Premiere:\n{xml}\n{mcsv}\n(File > Importa: l'XML crea una sequenza "
+                     "con i marcatori)")
+        except Exception:  # noqa: BLE001
+            extra = ""
         QMessageBox.information(self, "Minutaggi",
-                                f"Salvati:\n{txt}\n{csv}\n\nIl file .csv si apre direttamente in Excel.")
+                                f"Salvati:\n{txt}\n{csv}\n\nIl file .csv si apre in Excel.{extra}")
         open_folder_of(txt)
 
     # ---- esportazione
@@ -1173,7 +1180,8 @@ class MainWindow(QMainWindow):
                            original_volume=opts["original_volume"])
             try:
                 timecodes.save(os.path.splitext(out)[0] + "_minutaggi", result, media, s, script_all)
-            except OSError:
+                premiere.save(os.path.splitext(out)[0] + "_premiere", result, media, s, script_all)
+            except Exception:  # noqa: BLE001
                 pass            # i minutaggi sono un extra: non fermano il video
             if script_path:
                 text = build_script(report, script_clips, names,
