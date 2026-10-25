@@ -84,3 +84,15 @@ def test_separate_conversion_is_part_of_the_try():
     r = parse_report("Meta al 10° (5-0), trasformazione (7-0). Poi un calcio di punizione (7-3).")
     assert [(e.kind, e.points) for e in r.events] == [("meta", 7), ("calcio", 3)]
     assert r.events[0].score == (7, 0) and r.count("calcio") == 1
+
+
+def test_inizio_snaps_to_whistle():
+    from rugby_highlights import timecodes
+    from rugby_highlights.models import AnalysisResult, Marker, Settings, Whistle
+    res = AnalysisResult(200.0, markers=[Marker(30.0, "inizio"), Marker(100.0, "inizio"),
+                                         Marker(110.0, "meta")],
+                         whistles=[Whistle(26.0, 27.0), Whistle(60.0, 61.0)])
+    rows = timecodes.build_rows(res, None, Settings(), [])
+    assert rows[0]["t"] == 26.0 and rows[0]["snapped"]          # aggancia il fischio
+    assert rows[1]["t"] == 100.0 and not rows[1]["snapped"]     # nessun fischio vicino
+    assert abs(rows[2]["since"] - 10.0) < 1e-6

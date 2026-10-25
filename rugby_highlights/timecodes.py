@@ -25,21 +25,32 @@ def ms(t):
     return f"{int(t // 60)}:{t % 60:04.1f}"
 
 
+SNAP_WINDOW = 15.0     # il fischio d'inizio deve essere nei 15 s prima della parola
+
+
+def snap_to_whistle(t, whistles, window=SNAP_WINDOW):
+    """Tempo del fischio piu' vicino subito prima di t (o t stesso se non c'e')."""
+    near = [w.start for w in whistles if t - window <= w.start <= t + 0.5]
+    return (max(near), True) if near else (t, False)
+
+
 def build_rows(result, media, settings, clips=None):
     """Una riga per ogni parola riconosciuta, in ordine di tempo."""
     clips = result.clips if clips is None else clips
     marks = dedupe_markers(result.markers, settings.dedupe_seconds)
     rows, start_t, start_n = [], None, 0
     for m in marks:
+        t, snapped = m.time, False
         if m.kind == "inizio":
+            t, snapped = snap_to_whistle(m.time, result.whistles)
             start_n += 1
-            start_t = m.time
+            start_t = t
         base = start_t if start_t is not None else 0.0
-        row = {"t": m.time, "kind": m.kind, "conf": m.conf,
+        row = {"t": t, "kind": m.kind, "conf": m.conf, "snapped": snapped, "spoken": m.time,
                "since": m.time - base, "period": start_n, "file": "", "local": None,
                "clip": None, "dropped": False}
         if media is not None and len(media.sources) > 1:
-            idx, local = media.locate(m.time)
+            idx, local = media.locate(t)
             row["file"], row["local"] = os.path.basename(media.sources[idx].path), local
         if m.kind != "inizio":
             hit = [c for c in clips if c.start - 0.5 <= m.time <= c.end + 0.5]
@@ -55,7 +66,7 @@ def build_rows(result, media, settings, clips=None):
 def build_text(result, media, settings, clips=None, title="Minutaggi della partita"):
     rows = build_rows(result, media, settings, clips)
     out = [title.upper(), "=" * len(title),
-           "Tempi sulla registrazione intera (ore:minuti:secondi). «Dall'inizio» parte dall'ultima",
+           "Tempi sulla registrazione intera (ore:minuti:secondi). «INIZIO (fischio)» è il fischio d'inizio trovato subito prima della tua parola. «Dall'inizio» parte dall'ultima",
            "volta che hai detto «inizio». «Azione» è il tratto che finisce negli highlights.", ""]
     if not any(r["kind"] == "inizio" for r in rows):
         out += ["Non ho sentito la parola «inizio»: i tempi «dall'inizio» partono dall'avvio della registrazione.", ""]
@@ -70,7 +81,9 @@ def build_text(result, media, settings, clips=None, title="Minutaggi della parti
             tag = f"CALCIO {n_calcio}"
         else:
             tag = f"INIZIO {r['period']}"
-        line = f"{hms(r['t'])}   {tag:<10}"
+            if r["snapped"]:
+                tag += " (fischio)"
+        line = f"{hms(r['t'])}   {tag:<20}"
         if r["kind"] != "inizio":
             when = f"dall'inizio {ms(r['since'])}"
             if r["period"]:
