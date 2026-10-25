@@ -9,8 +9,8 @@ class Cancelled(Exception):
 
 # Parole dette a voce -> tipo di azione
 KEYWORDS = {
-    "meta": ["meta", "metà"],
-    "calcio": ["calcio"],
+    "meta": ["meta", "metà", "mete"],
+    "calcio": ["calcio", "calci"],
     "inizio": ["inizio"],      # segna il calcio d'inizio: serve solo ai minutaggi
 }
 
@@ -27,8 +27,11 @@ class Settings:
     calcio_pre: float = 14.0
     calcio_post: float = 7.0
     # Voce
-    voice_min_conf: float = 0.6
-    use_grammar: bool = True             # riconoscimento limitato alle parole chiave
+    voice_min_conf: float = 0.7
+    # False = il riconoscitore usa tutto il vocabolario e si tengono solo le parole chiave:
+    # molto meno falsi positivi col rumore del pubblico. True = solo le parole chiave
+    # (piu' sensibile ma scambia il rumore per «meta»).
+    use_grammar: bool = False
     delay_correction: float = 0.0        # ritardo tra azione e parola detta (s)
     dedupe_seconds: float = 8.0
     # Montaggio

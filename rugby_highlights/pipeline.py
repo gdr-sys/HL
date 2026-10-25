@@ -68,6 +68,12 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
         if progress:
             progress(0.98, "Preparo le clip…")
 
+        heard = sum(1 for m in markers if m.kind in ("meta", "calcio"))
+        if heard > 30 and (not expected.any or heard > 3 * (expected.meta + expected.calcio)):
+            messages.append(
+                f"Ho sentito {heard} parole «meta» o «calcio»: sono troppe, in gran parte "
+                "sarà rumore. Controlla il tabellino e alza la «sicurezza minima delle parole» "
+                "nelle impostazioni avanzate.")
         clips = plan_clips(markers, feats.whistles, duration, settings)
         if not markers and markers_provider is None and not messages:
             messages.append("Non ho sentito nessuna parola 'meta' o 'calcio'.")

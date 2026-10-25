@@ -49,8 +49,23 @@ def test_find_markers_filters_by_word_and_confidence(monkeypatch, tmp_path):
     raw = tmp_path / "a.raw"
     raw.write_bytes(b"\x00\x00" * 16000 * 3)   # 3 s di silenzio
     progress = []
-    markers = find_markers(str(raw), "modello-finto", Settings(), progress.append)
+    markers = find_markers(str(raw), "modello-finto", Settings(use_grammar=True), progress.append)
     assert [(m.kind, m.time) for m in markers] == [("meta", 1.5), ("calcio", 9.0)]
     grammar = json.loads(seen["grammar"])
     assert "meta" in grammar and "calcio" in grammar and "[unk]" in grammar
     assert progress and progress[-1] == 1.0
+
+
+def test_default_uses_full_vocabulary_and_writes_log(monkeypatch, tmp_path):
+    seen = {}
+    _install_fake_vosk(monkeypatch, seen)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+    from rugby_highlights.speech import find_markers, log_path
+
+    raw = tmp_path / "a.raw"
+    raw.write_bytes(b"\x00\x00" * 16000 * 3)
+    markers = find_markers(str(raw), "modello-finto", Settings())
+    assert seen["grammar"] is None                       # nessuna grammatica: meno falsi positivi
+    assert len(markers) == 2
+    log = open(log_path(), encoding="utf-8").read()
+    assert "scartata" in log and "tenuta" in log          # il log mostra anche le parole scartate

@@ -235,7 +235,8 @@ class SetupPage(QWidget):
                 ("meta_post", "Dopo la meta (festeggiamenti)", 12, 0, 60, " s"),
                 ("calcio_pre", "Prima del calcio", 14, 2, 60, " s"),
                 ("calcio_post", "Dopo il calcio", 7, 0, 60, " s"),
-                ("delay", "Ritardo con cui dico «meta» o «calcio»", 0, 0, 20, " s"))
+                ("delay", "Ritardo con cui dico «meta» o «calcio»", 0, 0, 20, " s"),
+                ("conf", "Sicurezza minima delle parole (più alta = meno errori)", 70, 30, 98, " %"))
         for r, (key, label, default, lo, hi, suffix) in enumerate(rows):
             lab = QLabel(label)
             sp = NumberStepper(default, lo, hi, 15 if key == "target" else 1, suffix)
@@ -339,6 +340,7 @@ class SetupPage(QWidget):
         s.calcio_pre = float(self.spins["calcio_pre"].value())
         s.calcio_post = float(self.spins["calcio_post"].value())
         s.delay_correction = float(self.spins["delay"].value())
+        s.voice_min_conf = self.spins["conf"].value() / 100.0
         return s
 
     # ---- comunicato
