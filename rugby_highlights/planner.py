@@ -47,6 +47,8 @@ def plan_clips(markers, whistles, duration, s):
     """Una clip per ogni parola riconosciuta."""
     clips = []
     for m in dedupe_markers(markers, s.dedupe_seconds):
+        if m.kind not in ("meta", "calcio"):      # «inizio» non genera clip
+            continue
         t = max(0.0, m.time - s.delay_correction)
         if m.kind == "meta":
             lo, hi = t - s.meta_lookback_max, t - s.meta_lookback_min

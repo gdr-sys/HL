@@ -11,6 +11,7 @@ class Cancelled(Exception):
 KEYWORDS = {
     "meta": ["meta", "metà"],
     "calcio": ["calcio"],
+    "inizio": ["inizio"],      # segna il calcio d'inizio: serve solo ai minutaggi
 }
 
 

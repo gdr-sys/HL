@@ -48,3 +48,20 @@ def test_script_aligns_clips_and_flags_gaps():
 def test_script_without_report_is_generic():
     s = build_script(None, [Clip(0, 20, "meta"), Clip(30, 50, "calcio")])
     assert "Da leggere: Meta." in s and "Da leggere: Calcio a punti." in s
+
+
+def test_timecodes_since_inizio_and_files():
+    from rugby_highlights import timecodes
+    from rugby_highlights.media import Media, Source
+    from rugby_highlights.models import AnalysisResult, Marker, Settings
+    media = Media([Source("a.mp4", 100.0, 0.0), Source("b.mp4", 100.0, 100.0)])
+    res = AnalysisResult(200.0, clips=[Clip(40, 60, "meta"), Clip(120, 140, "calcio", enabled=False)],
+                         markers=[Marker(20.0, "inizio"), Marker(58.0, "meta"),
+                                  Marker(130.0, "calcio"), Marker(150.0, "meta")])
+    txt = timecodes.build_text(res, media, Settings(), res.clips)
+    assert "0:00:58.0   META 1" in txt and "dall'inizio 0:38.0" in txt
+    assert "azione 0:00:40 → 0:01:00" in txt
+    assert "(clip scartata)" in txt and "(nessuna clip)" in txt
+    assert "[b.mp4 a 0:00:30.0]" in txt
+    csv = timecodes.build_csv(res, media, Settings(), res.clips)
+    assert csv.splitlines()[0].startswith("Tipo;") and "scartata" in csv

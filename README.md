@@ -68,3 +68,7 @@ ffmpeg incluso nell'installer è la build GPL di BtbN (https://github.com/BtbN/F
 ## Copione e riassunto dal comunicato
 
 Nella prima schermata puoi incollare il comunicato stampa. Il programma legge i punteggi progressivi (es. «12-0», «12-7»), capisce chi ha segnato e se è una meta o un calcio, compila il tabellino e, alla creazione del video, scrive anche un file `..._copione.txt` con riassunto, testo da leggere per ogni clip (con orari del video finale), frase del comunicato di contesto e cronologia dei punti. Non usa internet né intelligenza artificiale: se il comunicato non riporta i punteggi progressivi, il testo resta generico.
+
+## Minutaggi per il montaggio completo
+
+Se dici «inizio» al calcio d'inizio (anche all'inizio del secondo tempo), il programma lo segna. Il pulsante **Minutaggi** nella revisione (e il file `..._minutaggi.txt/.csv` creato con il video) elenca ogni «meta», «calcio» e «inizio» con il tempo preciso sulla registrazione, il tempo dall'ultimo «inizio», l'azione che finisce negli highlights e, se i file sono più di uno, il file e il punto dentro al file.

@@ -21,6 +21,7 @@ from .paths import find_binary, find_vosk_model
 from .pipeline import analyze
 from .planner import fit_to_target, relabel
 from .player import VideoPlayer
+from . import timecodes
 from .widgets import (ClipRow, ClipTimeline, DropArea, NumberStepper, StepBar, Stepper,
                       TrimSlider, fmt_time, repolish)
 
@@ -463,6 +464,7 @@ class AnalysisPage(QWidget):
 # ------------------------------------------------------------------------ pagina 3
 class ReviewPage(QWidget):
     exportRequested = Signal(list)
+    timecodesRequested = Signal()
     newMatchRequested = Signal()
 
     def __init__(self):
@@ -607,6 +609,11 @@ class ReviewPage(QWidget):
         self.total_bar.setRange(0, 1000)
         self.total_bar.setMinimumWidth(200)
         bb.addWidget(self.total_bar, 1)
+        self.btn_times = QPushButton("Minutaggi")
+        self.btn_times.setToolTip("Salva i tempi precisi di «meta», «calcio» e «inizio» "
+                                  "sulla registrazione intera")
+        self.btn_times.clicked.connect(self.timecodesRequested)
+        bb.addWidget(self.btn_times)
         self.btn_fit = QPushButton("Adatta alla durata massima")
         self.btn_fit.clicked.connect(self._fit)
         new = QPushButton("Nuova partita")
@@ -1053,6 +1060,7 @@ class MainWindow(QMainWindow):
         self.analysis.cancelRequested.connect(self._cancel)
         self.export.cancelRequested.connect(self._cancel)
         self.review.exportRequested.connect(self._start_export)
+        self.review.timecodesRequested.connect(self._save_timecodes)
         self.review.newMatchRequested.connect(self._new_match)
         self.export.backRequested.connect(lambda: self._go(2))
         self.export.newRequested.connect(self._new_match)
@@ -1118,8 +1126,26 @@ class MainWindow(QMainWindow):
         self._run(lambda cb: analyze(media, settings, expected, cb), "analysis", self._analysis_done)
 
     def _analysis_done(self, result):
+        self._result = result
         self.review.load(result, self._media, self._settings)
         self._go(2)
+
+    # ---- minutaggi
+    def _save_timecodes(self):
+        base = os.path.splitext(self._media.paths[0])[0] + "_minutaggi"
+        path, _ = QFileDialog.getSaveFileName(self, "Salva i minutaggi", base + ".txt",
+                                              "Testo (*.txt)")
+        if not path:
+            return
+        try:
+            txt, csv = timecodes.save(os.path.splitext(path)[0], self._result, self._media,
+                                      self._settings, self.review.clips)
+        except OSError as e:
+            QMessageBox.warning(self, "Minutaggi", f"Non riesco a salvare il file.\n\n{e}")
+            return
+        QMessageBox.information(self, "Minutaggi",
+                                f"Salvati:\n{txt}\n{csv}\n\nIl file .csv si apre direttamente in Excel.")
+        open_folder_of(txt)
 
     # ---- esportazione
     def _start_export(self, ranges):
@@ -1130,6 +1156,7 @@ class MainWindow(QMainWindow):
             return
         opts = dlg.values()
         script_clips = [c for c in self.review.clips if c.enabled]
+        script_all, result = list(self.review.clips), self._result
         names = self.setup.names()
         script_path = (os.path.splitext(opts["out"])[0] + "_copione.txt") if opts["script"] else None
         out, s, media = opts["out"], self._settings, self._media
@@ -1144,6 +1171,10 @@ class MainWindow(QMainWindow):
                            progress=lambda f: cb(f, ""), music=opts["music"],
                            music_volume=opts["music_volume"],
                            original_volume=opts["original_volume"])
+            try:
+                timecodes.save(os.path.splitext(out)[0] + "_minutaggi", result, media, s, script_all)
+            except OSError:
+                pass            # i minutaggi sono un extra: non fermano il video
             if script_path:
                 text = build_script(report, script_clips, names,
                                     title=os.path.splitext(os.path.basename(out))[0].replace("_", " "))
