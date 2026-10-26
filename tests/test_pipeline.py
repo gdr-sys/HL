@@ -40,7 +40,7 @@ def test_plan_uses_previous_whistle(synthetic_video, tmp_path):
 
 def test_expected_check_and_audio_suggestion(synthetic_video):
     markers = [Marker(41.0, "meta", "meta", 0.9)]
-    res = analyze(synthetic_video, Settings(), Expected(meta=1, calcio=1),
+    res = analyze(synthetic_video, Settings(suggest_from_crowd=True), Expected(meta=1, calcio=1),
                   markers_provider=lambda raw: markers)
     assert any("Calci a punti: trovate 0 su 1" in m for m in res.messages), res.messages
     kinds = [c.kind for c in res.clips]

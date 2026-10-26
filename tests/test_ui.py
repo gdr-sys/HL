@@ -128,6 +128,7 @@ def test_whole_flow_through_the_window(qapp, window, synthetic_video, tmp_path, 
     window.setup.steps[("a", "meta")].setValue(2)
     window.setup.steps[("a", "calcio")].setValue(1)
     window.setup.report_text.setPlainText("Meta al 10° (7-0). Meta nella ripresa (7-7).")
+    window.setup.chk_crowd.setChecked(True)      # il test non ha voce: usa i picchi del pubblico
     window.setup.btn_go.click()
     assert window.stack.currentIndex() == 1
     assert wait_for(qapp, lambda: window.stack.currentIndex() == 2), "analisi non terminata"

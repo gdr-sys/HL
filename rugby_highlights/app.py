@@ -248,6 +248,8 @@ class SetupPage(QWidget):
             self.spins[key] = sp
             grid.addWidget(lab, r, 0)
             grid.addWidget(sp, r, 1)
+        self.chk_crowd = QCheckBox("Se manca qualche azione, proponi i picchi di rumore del pubblico")
+        grid.addWidget(self.chk_crowd, len(rows), 0, 1, 2)
         grid.setColumnStretch(0, 1)
         self.adv.hide()
         col.addWidget(self.adv)
@@ -346,6 +348,7 @@ class SetupPage(QWidget):
         s.calcio_post = float(self.spins["calcio_post"].value())
         s.delay_correction = float(self.spins["delay"].value())
         s.voice_min_conf = self.spins["conf"].value() / 100.0
+        s.suggest_from_crowd = self.chk_crowd.isChecked()
         return s
 
     # ---- comunicato

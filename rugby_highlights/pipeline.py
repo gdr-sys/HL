@@ -93,7 +93,11 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
             messages.append("Non ho sentito nessuna parola 'meta' o 'calcio'.")
         exp_msgs, missing = compare_expected(clips, expected)
         messages += exp_msgs
-        if missing > 0:
+        if missing > 0 and not settings.suggest_from_crowd:
+            messages.append(
+                f"Ne mancano {missing}: non le ho cercate nel rumore del pubblico, come hai scelto. "
+                "Puoi aggiungerle a mano nella revisione.")
+        if missing > 0 and settings.suggest_from_crowd:
             extra = suggest_from_audio(feats.peaks, clips, missing, duration, settings)
             if extra:
                 messages.append(

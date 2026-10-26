@@ -32,6 +32,7 @@ class Settings:
     # ne inventa dal rumore: le false vengono poi scartate in base a durata e volume).
     # False = vocabolario completo (meno inventate, ma puo' non riconoscere le tue).
     use_grammar: bool = True
+    suggest_from_crowd: bool = False     # se mancano azioni, proponi i picchi del pubblico
     voice_min_prominence: float = 3.0    # quanto la voce deve superare il rumore intorno (dB)
     delay_correction: float = 0.0        # ritardo tra azione e parola detta (s)
     dedupe_seconds: float = 8.0
