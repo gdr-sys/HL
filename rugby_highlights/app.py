@@ -6,7 +6,7 @@ import sys
 import threading
 
 from PySide6.QtCore import QObject, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
@@ -17,7 +17,7 @@ from .ffmpeg_utils import export_montage, probe_duration
 from .media import Media, natural_key
 from .models import Cancelled, Clip, Expected, Settings
 from .narration import Names, ReportError, build_script, parse_report
-from .paths import find_binary, find_vosk_model
+from .paths import find_binary, find_vosk_model, resource_dir
 from .pipeline import analyze
 from .planner import fit_to_target, relabel
 from .player import VideoPlayer
@@ -602,7 +602,15 @@ class ReviewPage(QWidget):
         self.timeline = ClipTimeline()
         self.timeline.clipClicked.connect(self.list.setCurrentRow)
         self.timeline.seekRequested.connect(self._seek)
+        self.timeline.markerClicked.connect(lambda m: self._seek(m.time))
+        self.timeline.rangeSelected.connect(self._add_range)
         right.addWidget(self.timeline)
+        hint = QLabel("Tutta la partita: clic per andare in un punto · trascina per creare una clip · "
+                      "rotella per ingrandire · doppio clic per tornare a tutto. "
+                      "I pallini sono le parole sentite (pieni = usate, vuoti = non usate).")
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        right.addWidget(hint)
         body.addLayout(right, 1)
         root.addLayout(body, 1)
 
@@ -651,6 +659,7 @@ class ReviewPage(QWidget):
         self.clips = result.clips
         self._cursor = 0.0
         self.timeline.set_data(result.duration, result.energy, result.whistles)
+        self.timeline.set_markers(result.markers, result.others)
         msgs = [m for m in result.messages if m]
         self.banner.setVisible(bool(msgs))
         self.banner_lbl.setText("\n".join("• " + m for m in msgs))
@@ -801,6 +810,16 @@ class ReviewPage(QWidget):
                  source="manuale", note="aggiunta a mano")
         self.clips = relabel(self.clips + [c])
         self._populate(self.clips.index(c))
+
+    def _add_range(self, start, end):
+        """Un tratto scelto trascinando sulla linea del tempo diventa una clip."""
+        if not self.media:
+            return
+        c = Clip(max(0.0, start), min(self.duration, end), "manuale",
+                 source="manuale", note="scelta sulla linea del tempo")
+        self.clips = relabel(self.clips + [c])
+        self._populate(self.clips.index(c))
+        self._seek(c.start)
 
     def _delete(self):
         if self.sel < 0:
@@ -1243,6 +1262,9 @@ def main():
     sys.excepthook = _excepthook
     app = QApplication(sys.argv)
     app.setApplicationName("Rugby Highlights")
+    icon = resource_dir() / "assets" / "icon.png"
+    if icon.exists():
+        app.setWindowIcon(QIcon(str(icon)))
     app.setStyle("Fusion")
     app.setStyleSheet(theme.build_qss())
     win = MainWindow()

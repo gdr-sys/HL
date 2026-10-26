@@ -98,3 +98,4 @@ class AnalysisResult:
     peaks: list = field(default_factory=list)
     messages: list = field(default_factory=list)
     energy: list = field(default_factory=list)   # livello del rumore, un valore al secondo
+    others: list = field(default_factory=list)   # parole sentite con sicurezza ma non usate

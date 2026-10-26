@@ -67,6 +67,7 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
                                            report(0.40, 0.97, "Ascolto le parole 'meta' e 'calcio'…"))
                 except ImportError:
                     messages.append("Riconoscimento vocale non disponibile (libreria mancante).")
+        heard = []
         if markers and markers_provider is None:
             heard = list(markers)
             markers, _dropped = filter_markers(markers, feats.rms_db, settings)
@@ -90,12 +91,14 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
         if progress:
             progress(0.98, "Preparo le clip…")
 
-        heard = sum(1 for m in markers if m.kind in ("meta", "calcio"))
-        if heard > 30 and (not expected.any or heard > 3 * (expected.meta + expected.calcio)):
+        n_heard = sum(1 for m in markers if m.kind in ("meta", "calcio"))
+        if n_heard > 30 and (not expected.any or n_heard > 3 * (expected.meta + expected.calcio)):
             messages.append(
-                f"Ho sentito {heard} parole «meta» o «calcio»: sono troppe, in gran parte "
+                f"Ho sentito {n_heard} parole «meta» o «calcio»: sono troppe, in gran parte "
                 "sarà rumore. Controlla il tabellino e alza la «sicurezza minima delle parole» "
                 "nelle impostazioni avanzate.")
+        used_ids = {id(m) for m in markers}
+        others = [m for m in heard if id(m) not in used_ids and m.conf >= 0.5]
         clips = plan_clips(markers, feats.whistles, duration, settings)
         if not markers and markers_provider is None and not messages:
             messages.append("Non ho sentito nessuna parola 'meta' o 'calcio'.")
@@ -118,6 +121,6 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
         energy = (feats.rms_db[:per_sec * 10].reshape(per_sec, 10).max(axis=1).tolist()
                   if per_sec else [])
         return AnalysisResult(duration, clips, markers, feats.whistles, feats.peaks,
-                              messages, energy)
+                              messages, energy, others)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

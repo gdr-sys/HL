@@ -18,6 +18,7 @@ KIND_COLORS = {
     "calcio": "#4DA3FF",    # azzurro
     "dubbio": "#F5A524",    # ambra
     "manuale": "#B18CFF",   # viola
+    "inizio": "#E6EDF3",    # bianco
 }
 
 

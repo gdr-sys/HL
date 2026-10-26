@@ -197,3 +197,47 @@ def test_report_fills_scoreboard(window):
     s.name_opp.setText("Capitolina")
     n = s.names()
     assert (n.home, n.away) == ("Capitolina", "Fiorini")
+
+
+def test_timeline_zoom_markers_and_range_selection(window, synthetic_video):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent, QWheelEvent
+    from PySide6.QtCore import QPoint, Qt as _Qt
+    from rugby_highlights.media import Media
+    media = Media.from_paths([str(synthetic_video)])
+    res = analyze(str(synthetic_video), Settings(), Expected(0, 0),
+                  markers_provider=lambda raw: [Marker(41.0, "meta", "meta", 0.9)])
+    res.others = [Marker(70.0, "meta", "mete", 0.6)]
+    r = window.review
+    r.load(res, media, Settings())
+    window._go(2)
+    tl = r.timeline
+    tl.resize(1000, 112)
+    assert len(tl.used) == 1 and len(tl.others) == 1
+    # trascinando sulla linea si crea una clip manuale
+    n = len(r.clips)
+    got = []
+    tl.rangeSelected.connect(lambda a, b: got.append((a, b)))
+    y = 30
+
+    def mouse(kind, x, button=_Qt.LeftButton):
+        e = QMouseEvent(kind, QPointF(x, y), QPointF(x, y), button, button, _Qt.NoModifier)
+        {QMouseEvent.Type.MouseButtonPress: tl.mousePressEvent,
+         QMouseEvent.Type.MouseMove: tl.mouseMoveEvent,
+         QMouseEvent.Type.MouseButtonRelease: tl.mouseReleaseEvent}[kind](e)
+
+    x0, x1 = tl._x(100.0), tl._x(112.0)
+    mouse(QMouseEvent.Type.MouseButtonPress, x0)
+    mouse(QMouseEvent.Type.MouseMove, (x0 + x1) / 2)
+    mouse(QMouseEvent.Type.MouseMove, x1)
+    mouse(QMouseEvent.Type.MouseButtonRelease, x1)
+    assert got and abs(got[0][0] - 100) < 1.5 and abs(got[0][1] - 112) < 1.5
+    assert len(r.clips) == n + 1 and any(c.source == "manuale" for c in r.clips)
+    # la rotella ingrandisce, il doppio clic torna a tutto
+    span = tl._span()
+    tl.wheelEvent(QWheelEvent(QPointF(500, y), QPointF(500, y), QPoint(0, 0), QPoint(0, 120),
+                              _Qt.NoButton, _Qt.NoModifier, _Qt.NoScrollPhase, False))
+    assert tl._span() < span
+    tl._set_view(0, tl.duration)
+    assert tl._span() == tl.duration
+    tl.grab()          # il disegno con parole e zoom non deve dare errori

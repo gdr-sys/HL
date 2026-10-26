@@ -19,6 +19,8 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName=Rugby Highlights
+SetupIconFile=..\assets\icon.ico
+UninstallDisplayIcon={app}\RugbyHighlights.exe
 
 [Languages]
 Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"

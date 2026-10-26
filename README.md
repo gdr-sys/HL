@@ -1,7 +1,27 @@
+<p align="center"><img src="docs/icona.png" alt="Rugby Highlights" width="120"></p>
+
 # Rugby Highlights
 
 Programma per Windows che crea il video degli highlights di una partita di rugby
 (2-3 minuti) partendo dalla registrazione intera, con sola audio ambiente.
+
+## Il programma, in tre schermate
+
+**1. Scegli la partita.** Trascini i video (anche più file), inserisci il tabellino o incolli il
+comunicato/elenco dei marcatori.
+
+![Scegli la partita](docs/1-scegli-la-partita.png)
+
+**2. Controlla le clip.** A sinistra le azioni trovate, in basso **tutta la partita** con i punti
+in cui hai detto «meta» e «calcio» (pallini). Se manca qualcosa puoi cliccare un punto,
+**trascinare sulla linea per creare una clip**, ingrandire con la rotella.
+
+![Controlla le clip](docs/2-controlla-le-clip.png)
+
+**3. Video pronto.** Il montaggio ha solo tagli netti, senza effetti; grafica e musica le aggiungi
+in Premiere con i marcatori esportati.
+
+![Video pronto](docs/3-video-pronto.png)
 
 ## Come funziona
 
@@ -76,3 +96,10 @@ Se dici «inizio» al calcio d'inizio (anche all'inizio del secondo tempo), il p
 ## Marcatori per Premiere
 
 Insieme ai minutaggi il programma crea `..._premiere.xml` (File > Importa in Premiere: una sequenza con i file della partita e i marcatori «Meta 1», «Calcio 2», «Inizio 2° tempo» e «Azione …») e `..._premiere_marcatori.csv` (elenco per il pannello Marcatori). La sequenza è a 25 fps: si può girare a 50p e montare a 25, i tempi in secondi restano uguali.
+
+## Scegliere a mano dalla partita intera
+
+Nella revisione la linea del tempo mostra **tutta la partita**: clic per andare in un punto,
+trascina per creare una clip su quel tratto, rotella per ingrandire (tasto destro trascinato per
+spostarsi, doppio clic per tornare a tutto). I pallini sono le parole sentite: pieni se usate,
+vuoti se sentite con buona sicurezza ma non usate; un clic su un pallino porta il video lì.

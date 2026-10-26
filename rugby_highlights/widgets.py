@@ -222,28 +222,47 @@ class StepBar(QWidget):
 
 # ----------------------------------------------------------------------------------
 class ClipTimeline(QWidget):
-    """Tutta la partita in una riga: rumore del campo, fischi e clip colorate."""
+    """Tutta la partita in una riga: rumore del campo, fischi, parole sentite e clip.
+
+    Clic = vai li'. Trascina = crea una clip su quel tratto. Rotella = ingrandisci.
+    Tasto destro trascinato = sposta la vista. Doppio clic = tutta la partita.
+    """
     clipClicked = Signal(int)
     seekRequested = Signal(float)
+    markerClicked = Signal(object)
+    rangeSelected = Signal(float, float)
 
     def __init__(self):
         super().__init__()
-        self.setMinimumHeight(104)
+        self.setMinimumHeight(112)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMouseTracking(True)
         self.duration = 0.0
+        self.v0 = self.v1 = 0.0          # parte di partita visibile
         self.energy = np.zeros(0)
         self.whistles = []
         self.clips = []
+        self.used = []                   # parole usate (meta, calcio, inizio)
+        self.others = []                 # parole sentite ma non usate
         self.sel = -1
         self.playhead = 0.0
         self._bars = None
+        self._press = None               # (x, t) alla pressione del tasto sinistro
+        self._drag = None                # (t0, t1) mentre si trascina
+        self._pan = None                 # (x, v0) col tasto destro
 
     # dati
     def set_data(self, duration, energy, whistles):
         self.duration = float(duration)
+        self.v0, self.v1 = 0.0, self.duration
         self.energy = np.asarray(energy, dtype=float)
         self.whistles = list(whistles)
         self._bars = None
+        self.update()
+
+    def set_markers(self, used, others):
+        self.used = [m for m in used if m.kind in ("meta", "calcio", "inizio")]
+        self.others = [m for m in others if m.kind in ("meta", "calcio")]
         self.update()
 
     def set_clips(self, clips, sel):
@@ -258,28 +277,48 @@ class ClipTimeline(QWidget):
     def _plot(self):
         return QRectF(10, 10, max(10, self.width() - 20), self.height() - 36)
 
+    def _span(self):
+        return max(1e-6, self.v1 - self.v0)
+
     def _x(self, t):
         r = self._plot()
-        return r.left() + r.width() * (t / self.duration if self.duration else 0)
+        return r.left() + r.width() * ((t - self.v0) / self._span() if self.duration else 0)
 
     def _t(self, x):
         r = self._plot()
-        return max(0.0, min(self.duration, (x - r.left()) / r.width() * self.duration))
+        return max(0.0, min(self.duration, self.v0 + (x - r.left()) / r.width() * self._span()))
+
+    def _set_view(self, v0, v1):
+        span = min(max(v1 - v0, 30.0), self.duration)
+        v0 = max(0.0, min(v0, self.duration - span))
+        self.v0, self.v1 = v0, v0 + span
+        self._bars = None
+        self.update()
 
     def _rebuild_bars(self):
         w = int(self._plot().width())
-        if len(self.energy) < 2 or w < 2:
+        a, b = int(self.v0), int(self.v1) + 1
+        seg = self.energy[a:b]
+        if len(seg) < 1 or w < 2:
             self._bars = np.zeros(max(w, 1))
             return
         lo, hi = np.percentile(self.energy, 5), np.percentile(self.energy, 99.5)
-        norm = np.clip((self.energy - lo) / max(hi - lo, 1e-6), 0, 1)
+        norm = np.clip((seg - lo) / max(hi - lo, 1e-6), 0, 1)
         idx = np.linspace(0, len(norm), w + 1).astype(int)[:-1]
         idx = np.minimum(idx, len(norm) - 1)
-        self._bars = np.maximum.reduceat(norm, idx)
+        self._bars = np.maximum.reduceat(norm, idx) if len(norm) >= w else norm[idx]
 
     def resizeEvent(self, e):
         self._bars = None
         super().resizeEvent(e)
+
+    def _marker_at(self, x, tol=7):
+        best = None
+        for m in self.used + self.others:
+            d = abs(self._x(m.time) - x)
+            if d <= tol and (best is None or d < best[0]):
+                best = (d, m)
+        return best[1] if best else None
 
     # disegno
     def paintEvent(self, _e):
@@ -291,6 +330,7 @@ class ClipTimeline(QWidget):
         if self.duration <= 0:
             return
         r = self._plot()
+        p.setClipRect(self.rect())
         if self._bars is None:
             self._rebuild_bars()
         # rumore del campo
@@ -300,8 +340,11 @@ class ClipTimeline(QWidget):
             h = 3 + v * (r.height() - 3)
             p.drawRect(QRectF(r.left() + i * r.width() / n, r.bottom() - h,
                               max(1.0, r.width() / n - 0.4), h))
+        p.setClipRect(QRectF(r.left() - 1, 0, r.width() + 2, self.height()))
         # clip
         for i, c in enumerate(self.clips):
+            if c.end < self.v0 or c.start > self.v1:
+                continue
             x0, x1 = self._x(c.start), self._x(c.end)
             col = QColor(kind_color(c.kind))
             sel = i == self.sel
@@ -313,36 +356,131 @@ class ClipTimeline(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(col if c.enabled else QColor(theme.MUTED))
             p.drawRect(QRectF(x0, r.top(), max(4.0, x1 - x0), 3))
+        # tratto che stai scegliendo
+        if self._drag:
+            a, b = sorted(self._drag)
+            sel_col = QColor(kind_color("manuale"))
+            sel_col.setAlpha(90)
+            p.setBrush(sel_col)
+            p.setPen(QPen(QColor(kind_color("manuale")), 1.5))
+            p.drawRect(QRectF(self._x(a), r.top(), max(2.0, self._x(b) - self._x(a)), r.height()))
         # fischi
-        pen = QPen(QColor(theme.WARN), 1.5)
-        p.setPen(pen)
+        p.setPen(QPen(QColor(theme.WARN), 1.5))
         for w in self.whistles:
-            x = self._x(w.start)
-            p.drawLine(int(x), int(r.bottom() - 7), int(x), int(r.bottom()))
+            if self.v0 <= w.start <= self.v1:
+                x = self._x(w.start)
+                p.drawLine(int(x), int(r.bottom() - 7), int(x), int(r.bottom()))
+        # parole sentite ma non usate (cerchi vuoti) e usate (pieni)
+        for m in self.others:
+            if self.v0 <= m.time <= self.v1:
+                col = QColor(kind_color(m.kind))
+                col.setAlpha(150)
+                p.setPen(QPen(col, 1.5))
+                p.setBrush(Qt.NoBrush)
+                p.drawEllipse(QRectF(self._x(m.time) - 4, r.top() + 5, 8, 8))
+        for m in self.used:
+            if self.v0 <= m.time <= self.v1:
+                col = QColor(kind_color(m.kind))
+                p.setPen(QPen(QColor(theme.BG), 1.5))
+                p.setBrush(col)
+                p.drawEllipse(QRectF(self._x(m.time) - 5, r.top() + 4, 10, 10))
+        p.setClipping(False)
         # tempo
         p.setPen(QColor(theme.MUTED))
-        step = 600 if self.duration > 2400 else 300 if self.duration > 900 else 60
-        t = 0
-        while t <= self.duration:
-            x = self._x(t)
-            p.drawLine(int(x), int(r.bottom() + 3), int(x), int(r.bottom() + 7))
-            lx = min(max(x - 30, 2), self.width() - 62)
-            p.drawText(QRectF(lx, r.bottom() + 8, 60, 16), Qt.AlignHCenter, fmt_time(t))
+        span = self._span()
+        step = 10 if span <= 120 else 60 if span <= 600 else 300 if span <= 1800 else 600
+        if span <= 120 and span > 60:
+            step = 20
+        t = int(self.v0 // step) * step
+        while t <= self.v1:
+            if t >= self.v0:
+                x = self._x(t)
+                p.drawLine(int(x), int(r.bottom() + 3), int(x), int(r.bottom() + 7))
+                lx = min(max(x - 30, 2), self.width() - 62)
+                p.drawText(QRectF(lx, r.bottom() + 8, 60, 16), Qt.AlignHCenter, fmt_time(t))
             t += step
         # cursore
-        x = self._x(self.playhead)
-        p.setPen(QPen(QColor("#FFFFFF"), 2))
-        p.drawLine(int(x), int(r.top() - 4), int(x), int(r.bottom() + 2))
+        if self.v0 <= self.playhead <= self.v1:
+            x = self._x(self.playhead)
+            p.setPen(QPen(QColor("#FFFFFF"), 2))
+            p.drawLine(int(x), int(r.top() - 4), int(x), int(r.bottom() + 2))
 
+    # mouse
     def mousePressEvent(self, e):
-        if self.duration <= 0 or e.button() != Qt.LeftButton:
+        if self.duration <= 0:
             return
         x = e.position().x()
+        if e.button() in (Qt.RightButton, Qt.MiddleButton):
+            self._pan = (x, self.v0)
+            return
+        if e.button() != Qt.LeftButton:
+            return
+        m = self._marker_at(x)
+        if m is not None:
+            self.markerClicked.emit(m)
+            return
+        hit = None
         for i, c in enumerate(self.clips):
             if self._x(c.start) - 3 <= x <= max(self._x(c.end), self._x(c.start) + 4) + 3:
-                self.clipClicked.emit(i)
-                return
-        self.seekRequested.emit(self._t(x))
+                hit = i
+                break
+        # clic su una clip = selezionala; trascinando si crea invece un nuovo tratto
+        self._press = (x, self._t(x), hit)
+
+    def mouseMoveEvent(self, e):
+        x = e.position().x()
+        if self._pan is not None:
+            r = self._plot()
+            dt = (x - self._pan[0]) / r.width() * self._span()
+            self._set_view(self._pan[1] - dt, self._pan[1] - dt + self._span())
+            return
+        if self._press is not None and abs(x - self._press[0]) > 5:
+            self._drag = (self._press[1], self._t(x))
+            self.update()
+            return
+        m = self._marker_at(x)
+        if m is not None:
+            used = m in self.used
+            self.setToolTip(f"{m.kind} · {fmt_time(m.time, True)} · sicurezza {m.conf * 100:.0f}%"
+                            + ("" if used else " · sentita ma non usata"))
+            self.setCursor(Qt.PointingHandCursor)
+        else:
+            self.setToolTip("")
+            self.setCursor(Qt.ArrowCursor)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() in (Qt.RightButton, Qt.MiddleButton):
+            self._pan = None
+            return
+        if e.button() != Qt.LeftButton or self._press is None:
+            return
+        press, drag = self._press, self._drag
+        self._press, self._drag = None, None
+        self.update()
+        if drag and abs(drag[1] - drag[0]) >= 2.0:
+            a, b = sorted(drag)
+            self.rangeSelected.emit(a, b)
+        elif press[2] is not None:
+            self.clipClicked.emit(press[2])
+        else:
+            self.seekRequested.emit(press[1])
+
+    def wheelEvent(self, e):
+        if self.duration <= 0:
+            return
+        dy = e.angleDelta().y()
+        if dy == 0:
+            return
+        anchor = self._t(e.position().x())
+        factor = 0.75 if dy > 0 else 1 / 0.75
+        span = min(self.duration, max(30.0, self._span() * factor))
+        ratio = (anchor - self.v0) / self._span()
+        self._set_view(anchor - ratio * span, anchor - ratio * span + span)
+        e.accept()
+
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.LeftButton and self.duration > 0:
+            self._set_view(0.0, self.duration)
 
 
 # ----------------------------------------------------------------------------------

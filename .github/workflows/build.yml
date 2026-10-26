@@ -50,6 +50,8 @@ jobs:
         shell: pwsh
         run: |
           pyinstaller --noconfirm --windowed --name RugbyHighlights `
+            --icon assets/icon.ico `
+            --add-data "assets;assets" `
             --collect-all vosk `
             --exclude-module tkinter `
             --hidden-import PySide6.QtMultimedia `
