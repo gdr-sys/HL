@@ -46,6 +46,7 @@ class Event:
     scorer: str = ""          # marcatore, se scritto nel tabellino (es. «cp Azzolini»)
     detail: str = ""          # "punizione" | "drop" | "trasformata"
     kicker: str = ""          # chi ha trasformato (es. «tr Lazzaroni»)
+    half: int = 1             # 1 = primo tempo, 2 = secondo tempo
     exact: bool = True         # False se piu' punti stanno nello stesso salto (ordine incerto)
 
 
@@ -255,6 +256,7 @@ def parse_report(text) -> Report:
                                 cur if known else None, fragment, when, minute,
                                 scorer=scorer if len(groups) == 1 else "",
                                 kicker=kicker if len(groups) == 1 else "",
+                                half=2 if second_half else 1,
                                 detail=detail if len(groups) == 1 else "",
                                 exact=len(groups) == 1))
         prev = cur

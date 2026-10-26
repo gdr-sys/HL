@@ -1,8 +1,7 @@
 """Scelta delle parole «meta»/«calcio»/«inizio» davvero dette da te.
 
 Il riconoscitore, con tanto rumore, "sente" parole che non ci sono. La tua voce vicino al
-microfono, pero', ha tre caratteristiche: dura circa mezzo secondo, e' piu' forte del rumore
-intorno, ed e' riconosciuta con una certa sicurezza. Qui si tengono le parole che le hanno,
+microfono, pero', e' piu' forte del rumore intorno ed e' riconosciuta con una certa sicurezza. Qui si tengono le parole che le hanno,
 e a ognuna si da un punteggio (usato poi per scartare le meno sicure se il tabellino ne
 prevede meno).
 """
@@ -11,7 +10,6 @@ import numpy as np
 
 from .audio_analysis import HOP_S
 
-MIN_DUR, MAX_DUR = 0.15, 1.4
 
 
 def prominence_db(rms_db, start, end, around=15.0):
@@ -34,10 +32,9 @@ def filter_markers(markers, rms_db, settings):
     """Ritorna (tenute, scartate). Aggiorna prom e conf (= punteggio) di ogni parola."""
     kept, dropped = [], []
     for m in markers:
-        m.prom = prominence_db(rms_db, m.time, m.time + max(m.dur, 0.1))
-        ok = (MIN_DUR <= m.dur <= MAX_DUR if m.dur > 0 else True) \
-            and m.conf >= settings.voice_min_conf * 0.5 \
-            and m.prom >= settings.voice_min_prominence
+        # il volume si misura solo sulla parola (gli ultimi 0.7 s), non sul rumore prima
+        m.prom = prominence_db(rms_db, m.time, m.time + 0.7)
+        ok = m.conf >= settings.voice_min_conf * 0.5 and m.prom >= settings.voice_min_prominence
         m.conf = score(m.conf, m.prom)
         (kept if ok else dropped).append(m)
     return kept, dropped

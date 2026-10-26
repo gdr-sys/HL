@@ -1138,7 +1138,9 @@ class MainWindow(QMainWindow):
         self._settings, self._media = settings, media
         self.analysis.reset()
         self._go(1)
-        self._run(lambda cb: analyze(media, settings, expected, cb), "analysis", self._analysis_done)
+        report, conv = self.setup.report(), self.setup.chk_conv.isChecked()
+        self._run(lambda cb: analyze(media, settings, expected, cb, scoreboard=report, conv_calcio=conv),
+                  "analysis", self._analysis_done)
 
     def _analysis_done(self, result):
         self._result = result

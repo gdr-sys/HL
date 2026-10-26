@@ -10,6 +10,7 @@ from .media import Media
 from .models import AnalysisResult
 from .paths import find_vosk_model
 from .voice_filter import filter_markers
+from . import clock
 from .planner import plan_clips, compare_expected, relabel, suggest_from_audio
 
 
@@ -23,7 +24,7 @@ def as_media(video) -> Media:
 
 
 def analyze(video, settings, expected, progress=None, markers_provider=None,
-            model_dir=None) -> AnalysisResult:
+            model_dir=None, scoreboard=None, conv_calcio=True) -> AnalysisResult:
     """video: un file, un elenco di file (in ordine) o una Media.
 
     progress(frazione, testo). Puo' sollevare Cancelled per interrompere.
@@ -79,6 +80,13 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
                         f"Elenco completo: {log_path()}")
             except OSError:
                 pass
+        if markers and scoreboard is not None and any(e.minute for e in scoreboard.events):
+            before = len(markers)
+            markers, msgs = clock.refine(markers, scoreboard, conv_calcio)
+            messages += msgs
+            if len(markers) != before:
+                messages.append(f"Delle {before} parole sicure ne ho tenute {len(markers)}: "
+                                "le altre non corrispondono a nessun punto del tabellino.")
         if progress:
             progress(0.98, "Preparo le clip…")
 

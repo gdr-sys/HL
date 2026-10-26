@@ -61,7 +61,8 @@ class Marker:
     kind: str          # "meta" | "calcio"
     word: str = ""
     conf: float = 1.0
-    dur: float = 0.0       # durata della parola (s)
+    dur: float = 0.0       # durata della parola come la vede il riconoscitore (s)
+    raw_start: float = 0.0  # dove il riconoscitore la fa iniziare (include il rumore prima)
     prom: float = 0.0      # di quanti dB la voce supera il rumore intorno
 
 

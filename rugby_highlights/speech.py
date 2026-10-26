@@ -7,6 +7,7 @@ import tempfile
 from .models import KEYWORDS, Marker
 
 SR = 16000
+WORD_LEN = 0.7       # durata tipica di «meta» / «calcio» detto a voce (s)
 
 
 def speech_available() -> bool:
@@ -36,8 +37,12 @@ def find_markers(raw_path, model_dir, settings, progress=None):
             kind = word_kind.get(w.get("word"))
             conf = float(w.get("conf", 1.0))
             if kind:
-                dur = float(w.get("end", w["start"])) - float(w["start"])
-                markers.append(Marker(float(w["start"]), kind, w["word"], conf, dur))
+                start = float(w["start"])
+                end = float(w.get("end", start))
+                # Col vocabolario ristretto il riconoscitore fa iniziare la parola dal rumore che
+                # la precede (anche 10-20 s prima): la parola vera sta alla FINE.
+                when = max(start, end - WORD_LEN)
+                markers.append(Marker(when, kind, w["word"], conf, end - start, start))
 
     total = max(1, os.path.getsize(raw_path))
     done = 0
