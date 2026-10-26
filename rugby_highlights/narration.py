@@ -15,7 +15,10 @@ SECOND_HALF_RE = re.compile(
     r"\b(ripresa|secondo tempo|seconda frazione|II tempo|2\s?[°º]\s?tempo)\b|\bs\s?\.\s?t\b\.?", re.I)
 # sigle da tabellino: cp = calcio di punizione, dr = drop, m = meta, tr = trasformata
 SHORT_RE = re.compile(r"\b(cp|dr|tr|m)\b", re.I)
-SCORER_RE = re.compile(r"\b(?:cp|dr|tr|m)\b[^()\n,;]*?\b([A-ZÀ-Ý][a-zà-ÿ']{2,})")
+NAME = r"((?:(?:De|Di|Del|Della|Dal|La|Lo|Van)\s)?[A-ZÀ-Ý][’']?[A-ZÀ-Ý]?[a-zà-ÿ’']{2,})"
+SCORER_RE = re.compile(r"\b(?:cp|dr|m)\b[^()\n,;]*?\b" + NAME)
+KICKER_RE = re.compile(r"\btr\b[^()\n,;]*?\b" + NAME)
+HALF_TOKEN_RE = re.compile(r"\b[ps]\s?\.\s?t\.?|^\s*marcatori\s*:", re.I)
 END_FIRST_RE = re.compile(r"scadere (?:della|del) (?:prima|primo) (?:frazione|tempo)", re.I)
 FINAL_RE = re.compile(r"fischio finale|ultimo assalto|filo di lana|ultimi minuti|ultima azione", re.I)
 LEAD_WORDS = re.compile(r"^(?:e|ed|ma|però|mentre|poi|quindi|ma poi)\s+", re.I)
@@ -42,6 +45,7 @@ class Event:
     minute: int = None
     scorer: str = ""          # marcatore, se scritto nel tabellino (es. «cp Azzolini»)
     detail: str = ""          # "punizione" | "drop" | "trasformata"
+    kicker: str = ""          # chi ha trasformato (es. «tr Lazzaroni»)
     exact: bool = True         # False se piu' punti stanno nello stesso salto (ordine incerto)
 
 
@@ -51,6 +55,13 @@ class Report:
     final: tuple = (0, 0)
     paragraphs: list = field(default_factory=list)
     text: str = ""
+    warnings: list = field(default_factory=list)
+
+    def conversions(self, side=None):
+        """Mete trasformate (7 punti): servono se dici «calcio» anche per la trasformazione."""
+        return sum(1 for e in self.events if e.kind == "meta"
+                   and (e.points == 7 or e.detail == "trasformata")
+                   and (side is None or e.side == side))
 
     def count(self, kind, side=None):
         return sum(1 for e in self.events
@@ -95,6 +106,36 @@ def _longest_chain(scores):
     return chain[::-1]
 
 
+def _repair_chain(scores):
+    """Lettura in ordine che corregge i refusi tipici (es. «33-7» poi «38-0» -> 38-7).
+
+    Ritorna (indici accettati, valori corretti per indice, avvisi).
+    """
+    prev, idxs, vals, warns = (0, 0), [], {}, []
+    for i, s in enumerate(scores):
+        if s == prev:
+            continue
+        fixed = None
+        if s[0] >= prev[0] and s[1] >= prev[1]:
+            fixed = s
+        elif s[0] >= prev[0] and s[1] < prev[1]:
+            fixed = (s[0], prev[1])
+        elif s[1] >= prev[1] and s[0] < prev[0]:
+            fixed = (prev[0], s[1])
+        if fixed is None or fixed == prev:
+            continue
+        if not (_split_points(fixed[0] - prev[0]) or fixed[0] == prev[0]) or \
+                not (_split_points(fixed[1] - prev[1]) or fixed[1] == prev[1]):
+            continue
+        if fixed != s:
+            warns.append(f"Il punteggio {s[0]}-{s[1]} non torna con {prev[0]}-{prev[1]}: "
+                         f"l'ho letto come {fixed[0]}-{fixed[1]}. Controlla il testo.")
+        idxs.append(i)
+        vals[i] = fixed
+        prev = fixed
+    return idxs, vals, warns
+
+
 def _split_points(diff):
     """Salto di punti -> elenco dei punteggi singoli (7, 5, 3, 2).
 
@@ -132,10 +173,15 @@ def parse_report(text) -> Report:
     chain = _longest_chain(scores)
     if not chain:
         raise ReportError("Nel comunicato non trovo i punteggi (per esempio «12-7»).")
+    vals, warnings = {i: scores[i] for i in chain}, []
+    g_idx, g_vals, g_warns = _repair_chain(scores)
+    if len(g_idx) > len(chain):            # la lettura con correzioni ricostruisce piu' punti
+        chain, vals, warnings = g_idx, g_vals, g_warns
 
     # limiti delle frasi
     bounds, start = [], 0
-    for m in re.finditer(r"[.!?]+(?:\s+|$)|\n+", text):
+    # il punto dopo un'iniziale («Venturini L.») o dopo «s.t.»/«p.t.» non chiude la frase
+    for m in re.finditer(r"(?<![\s’'][A-ZÀ-Ý])(?<![sSpP]\.[tT])[.!?]+(?:\s+|$)|\n+", text):
         bounds.append((start, m.end()))
         start = m.end()
     if start < len(text):
@@ -149,18 +195,19 @@ def parse_report(text) -> Report:
 
     events, prev, prev_end, prev_sent = [], (0, 0), 0, None
     for idx in chain:
-        m, cur = matches[idx], scores[idx]
+        m, cur = matches[idx], vals[idx]
         s_start, s_end = sentence_of(m.start())
         a = max(s_start, prev_end) if prev_sent == (s_start, s_end) else s_start
         last_in_sentence = not any(
             matches[j].start() < s_end and matches[j].start() > m.start() for j in chain
             if j > idx)
         b = s_end if last_in_sentence else m.end() + (1 if text[m.end():m.end() + 1] == ")" else 0)
-        fragment = _clean_fragment(text[a:b])
+        raw = text[a:b]
+        fragment = _clean_fragment(HALF_TOKEN_RE.sub(" ", raw))
         prev_end, prev_sent = m.end(), (s_start, s_end)
 
         before = text[:m.start()]
-        second_half = bool(SECOND_HALF_RE.search(before)) or bool(SECOND_HALF_RE.search(fragment))
+        second_half = bool(SECOND_HALF_RE.search(before)) or bool(SECOND_HALF_RE.search(raw))
         mm = MINUTE_RE.search(fragment)
         minute = int(mm.group(1)) if mm else None
         if minute:
@@ -177,6 +224,8 @@ def parse_report(text) -> Report:
         shorts = {s.lower() for s in SHORT_RE.findall(fragment)}
         sm = SCORER_RE.search(fragment)
         scorer = sm.group(1) if sm else ""
+        km = KICKER_RE.search(fragment)
+        kicker = km.group(1) if km else ""
         detail = "punizione" if "cp" in shorts else "drop" if "dr" in shorts else ""
         if "tr" in shorts:
             detail = "trasformata"
@@ -205,12 +254,13 @@ def parse_report(text) -> Report:
             events.append(Event(side, "meta" if pts >= 5 else "calcio", pts,
                                 cur if known else None, fragment, when, minute,
                                 scorer=scorer if len(groups) == 1 else "",
+                                kicker=kicker if len(groups) == 1 else "",
                                 detail=detail if len(groups) == 1 else "",
                                 exact=len(groups) == 1))
         prev = cur
 
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\n", text) if p.strip()]
-    return Report(events, scores[chain[-1]], paragraphs, text)
+    return Report(events, vals[chain[-1]], paragraphs, text, warnings)
 
 
 # ------------------------------------------------------------------ abbinamento alle clip
@@ -270,7 +320,14 @@ def event_line(ev, number, names):
         kind = {"punizione": "calcio di punizione", "drop": "drop"}.get(ev.detail, "calcio a punti")
         what = f"{_ordinal(number, False)} {kind}"
     head = f"{ev.when}, " if ev.when else ""
-    line = f"{head}{what} per {team}" + (f", firmato {ev.scorer}." if ev.scorer else ".")
+    who = ""
+    if ev.scorer:
+        who = f", {'firmata da' if ev.kind == 'meta' else 'firmato da'} {ev.scorer}"
+        if ev.kind == "meta" and ev.kicker and ev.kicker != ev.scorer:
+            who += f", trasforma {ev.kicker}"
+        elif ev.kind == "meta" and ev.kicker:
+            who += " (trasforma lui stesso)"
+    line = f"{head}{what} per {team}{who}."
     line = line[0].upper() + line[1:]
     if ev.score:
         line += f" {_score_line(ev.score, names)}."
@@ -345,6 +402,8 @@ def build_script(report, clips, names=None, title="Highlights della partita"):
             out.append(f"{n:>2}. {e.when + ' - ' if e.when else ''}{e.kind} per {names.of(e.side)}"
                        f" (+{e.points})" + (f"  →  {_score_line(e.score, names)}" if e.score else ""))
         out.append("")
+    if report and report.warnings:
+        warnings = list(report.warnings) + warnings
     if warnings:
         out += ["DA CONTROLLARE", "--------------"] + [f"- {w}" for w in warnings] + [""]
     return "\n".join(out)

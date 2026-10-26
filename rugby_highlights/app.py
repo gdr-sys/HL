@@ -173,8 +173,13 @@ class SetupPage(QWidget):
                 tl.addWidget(s)
             teams.addLayout(tl, 1)
         bl.addLayout(teams)
-        explain = QLabel("Calci a punti: solo punizioni e drop. La trasformazione fa parte della meta: non va contata né detta.")
+        self.chk_conv = QCheckBox("Dico «calcio» anche per la trasformazione dopo la meta")
+        self.chk_conv.setChecked(True)
+        bl.addWidget(self.chk_conv)
+        explain = QLabel("Calci a punti: punizioni, drop e (se spuntato) trasformazioni. "
+                         "Il calcio dopo la meta viene unito alla clip della meta.")
         explain.setObjectName("muted")
+        explain.setWordWrap(True)
         bl.addWidget(explain)
         col.addWidget(box)
 
@@ -374,10 +379,15 @@ class SetupPage(QWidget):
         mine = "home" if self._mine_is_home() else "away"
         for key, side in (("a", mine), ("b", "away" if mine == "home" else "home")):
             for kind in ("meta", "calcio"):
-                self.steps[(key, kind)].setValue(rep.count(kind, side))
+                n = rep.count(kind, side)
+                if kind == "calcio" and self.chk_conv.isChecked():
+                    n += rep.conversions(side)
+                self.steps[(key, kind)].setValue(n)
+        warn = ("  ⚠ " + " ".join(rep.warnings)) if rep.warnings else ""
         self.report_info.setText(
             f"Trovati {len(rep.events)} punteggi: {rep.count('meta')} mete e "
-            f"{rep.count('calcio')} calci a punti. Ho compilato il tabellino: controllalo.")
+            f"{rep.count('calcio') + (rep.conversions() if self.chk_conv.isChecked() else 0)} "
+            "calci a punti. Ho compilato il tabellino: controllalo." + warn)
         return rep
 
     def expected(self):

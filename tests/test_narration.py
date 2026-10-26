@@ -119,3 +119,17 @@ def test_premiere_xml_and_csv(split_videos, tmp_path):
     assert lines[0].startswith("Marker Name\t") and lines[3].startswith("Meta 1\t")
     assert premiere.pathurl("C:\\Partite\\a b.mp4") == "file://localhost/C%3a/Partite/a%20b.mp4"
     assert premiere.timebase(29.97) == (30, True) and premiere.timebase(25.0) == (25, False)
+
+
+def test_scorers_list_with_typo_halves_and_names():
+    t = ("Marcatori: p.t. 7’ m Marangoni (5-0), 13’ m Mascetti tr Lazzaroni (12-0), "
+         "17’ m Antonelli tr Lazzaroni (19-0), 25’ m Lazzaroni tr Lazzaroni (26-0) "
+         "s.t. 5’ m D’Agostino tr Lazzaroni (33-0), 12’ m Acerra tr De Razza (33-7), "
+         "28’ m Venturini L. (38-0), 34’ m Giovannini (43-7).")
+    r = parse_report(t)
+    assert r.final == (43, 7) and len(r.events) == 8 and r.count("meta") == 8
+    assert len(r.warnings) == 1 and "38-7" in r.warnings[0]        # refuso nel punteggio corretto
+    assert [e.when for e in r.events][3] == "Al 25°"               # «s.t.» non sposta il 25'
+    assert r.events[4].when == "Al 5° del secondo tempo" and r.events[4].scorer == "D’Agostino"
+    assert r.events[5].side == "away" and r.events[5].kicker == "De Razza"
+    assert r.conversions("home") == 4 and r.conversions("away") == 1

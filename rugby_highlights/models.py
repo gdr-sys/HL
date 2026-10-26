@@ -28,10 +28,11 @@ class Settings:
     calcio_post: float = 7.0
     # Voce
     voice_min_conf: float = 0.7
-    # False = il riconoscitore usa tutto il vocabolario e si tengono solo le parole chiave:
-    # molto meno falsi positivi col rumore del pubblico. True = solo le parole chiave
-    # (piu' sensibile ma scambia il rumore per «meta»).
-    use_grammar: bool = False
+    # True = il riconoscitore ascolta solo le parole chiave (sente tutte le tue «meta» ma
+    # ne inventa dal rumore: le false vengono poi scartate in base a durata e volume).
+    # False = vocabolario completo (meno inventate, ma puo' non riconoscere le tue).
+    use_grammar: bool = True
+    voice_min_prominence: float = 3.0    # quanto la voce deve superare il rumore intorno (dB)
     delay_correction: float = 0.0        # ritardo tra azione e parola detta (s)
     dedupe_seconds: float = 8.0
     # Montaggio
@@ -59,6 +60,8 @@ class Marker:
     kind: str          # "meta" | "calcio"
     word: str = ""
     conf: float = 1.0
+    dur: float = 0.0       # durata della parola (s)
+    prom: float = 0.0      # di quanti dB la voce supera il rumore intorno
 
 
 @dataclass

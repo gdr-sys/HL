@@ -9,6 +9,7 @@ from .ffmpeg_utils import extract_audio_media, has_audio
 from .media import Media
 from .models import AnalysisResult
 from .paths import find_vosk_model
+from .voice_filter import filter_markers
 from .planner import plan_clips, compare_expected, relabel, suggest_from_audio
 
 
@@ -65,6 +66,19 @@ def analyze(video, settings, expected, progress=None, markers_provider=None,
                                            report(0.40, 0.97, "Ascolto le parole 'meta' e 'calcio'…"))
                 except ImportError:
                     messages.append("Riconoscimento vocale non disponibile (libreria mancante).")
+        if markers and markers_provider is None:
+            heard = list(markers)
+            markers, _dropped = filter_markers(markers, feats.rms_db, settings)
+            try:
+                from .speech import log_path, write_log
+                write_log(heard, markers, settings)
+                if len(markers) != len(heard):
+                    messages.append(
+                        f"Ho sentito {len(heard)} parole chiave e ne ho tenute {len(markers)} "
+                        "(le altre erano troppo brevi, troppo lunghe o più deboli del rumore). "
+                        f"Elenco completo: {log_path()}")
+            except OSError:
+                pass
         if progress:
             progress(0.98, "Preparo le clip…")
 

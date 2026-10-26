@@ -184,7 +184,13 @@ def test_report_fills_scoreboard(window):
         __import__("os").path.dirname(__file__), "comunicato.txt"), encoding="utf-8").read())
     s.venue.setCurrentIndex(1)                   # gioco in trasferta: la mia squadra e' la seconda
     s.read_report()
+    s.chk_conv.setChecked(False)
+    s.read_report()
     assert s.steps[("a", "meta")].value() == 4 and s.steps[("b", "meta")].value() == 5
+    assert s.steps[("a", "calcio")].value() == 0
+    s.chk_conv.setChecked(True)                 # dico «calcio» anche per le trasformazioni
+    s.read_report()
+    assert s.steps[("a", "calcio")].value() == 3 and s.steps[("b", "calcio")].value() == 4
     assert s.report() is not None
     s.name_mine.setText("Fiorini")
     s.name_opp.setText("Capitolina")
